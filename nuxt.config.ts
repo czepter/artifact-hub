@@ -19,6 +19,19 @@ export default defineNuxtConfig({
     // node:sqlite is a Node built-in; nothing to bundle.
     experimental: { openAPI: false, asyncContext: true },
   },
+  // Signed-in areas are a client-side SPA: they need no SEO, they would only render "Loading…" on the server, and the
+  // middleware decides access from the cached member. `/`, `/invite/*` and `/s/*` (public, token-gated) stay server-rendered.
+  routeRules: {
+    '/dashboard': { ssr: false },
+    '/artifacts': { ssr: false },
+    '/comments': { ssr: false },
+    '/account': { ssr: false },
+    '/admin/**': { ssr: false },
+    '/a/**': { ssr: false },
+    '/oauth/**': { ssr: false },
+  },
+  // Shown (on the canvas ground) in the SPA shell until the client app boots and the route's middleware settles.
+  spaLoadingTemplate: true,
   app: {
     head: {
       title: 'Artifact Hub',

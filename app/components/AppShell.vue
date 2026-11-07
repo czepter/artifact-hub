@@ -8,11 +8,7 @@ const route = useRoute()
 const inAdmin = computed(() => route.path.startsWith('/admin'))
 const adminLinks = [{ to: '/admin', label: 'Overview' }, { to: '/admin/members', label: 'Members' }, { to: '/admin/clients', label: 'Clients' }, { to: '/admin/share-links', label: 'Share links' }, { to: '/admin/activity', label: 'Activity' }]
 const isActive = (to: string) => (to === '/admin' ? route.path === '/admin' : to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(to + '/'))
-const openThreads = ref(0)
-// Kept across navigations (the shell stays mounted): refresh on route change, never reset to 0.
-async function refreshThreads() { openThreads.value = (await $fetch<{ open: number }>('/api/comments/count').catch(() => ({ open: openThreads.value }))).open }
-onMounted(refreshThreads)
-watch(() => route.path, refreshThreads)
+const openThreads = useCommentCount()
 const links = computed(() => [{ to: '/dashboard', label: 'Dashboard' }, { to: '/artifacts', label: 'Artifacts' }, { to: '/comments', label: 'Comments' }, ...(props.me?.role === 'owner' ? [{ to: '/admin', label: 'Admin' }] : [])])
 </script>
 
