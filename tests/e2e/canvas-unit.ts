@@ -1,5 +1,5 @@
 import { applyCanvasOps, CanvasError, emptyCanvas, mergeOps, orderedNoteIds, reorder, type CanvasOp } from '../../shared/canvasOps'
-import { itemBox, noteBox, scaleItems, moveEndpoint, unionBox, type GeomItem } from '../../shared/canvasGeometry'
+import { arrowPath, fitView, itemBox, noteBox, penPath, scaleItems, moveEndpoint, toWorldPoint, unionBox, zoomView, type GeomItem } from '../../shared/canvasGeometry'
 import { applyEdits, getElementSource, EditError, ensureIds } from '../../server/utils/htmlEdit'
 let fails = 0
 const ok = (n: string, c: any, x: any = '') => { console.log(c ? 'PASS' : 'FAIL', n, c ? '' : JSON.stringify(x).slice(0, 300)); if (!c) fails++ }
@@ -165,6 +165,16 @@ ok('scaleItems never collapses to zero (floor)', sc.sx >= 0.02 && sc.patches['n:
   ok('scaleItems: 10x round trip drifts less than 2px (rounding at 0.1)', drift < 2, drift)
 }
 ok('moveEndpoint: end moves the extent, start keeps the end point', JSON.stringify(moveEndpoint({ x: 0, y: 0, w: 100, h: 50 }, 'end', 10, 10)) === '{"x":0,"y":0,"w":110,"h":60}' && JSON.stringify(moveEndpoint({ x: 0, y: 0, w: 100, h: 50 }, 'start', 10, 10)) === '{"x":10,"y":10,"w":90,"h":40}')
+
+// view transform
+const fv = fitView([{ x: 0, y: 0, w: 2000, h: 1000 }], { w: 1000, h: 600 })!
+ok('fitView shrinks content into the window with padding, centred', Math.abs(fv.k - 0.452) < 0.01 && Math.abs(fv.tx - 48) < 0.5, fv)
+ok('fitView never zooms in past 1 and returns null for nothing', fitView([{ x: 0, y: 0, w: 10, h: 10 }], { w: 1000, h: 600 })!.k === 1 && fitView([], { w: 1, h: 1 }) === null)
+const zv = zoomView({ tx: 0, ty: 0, k: 1 }, 2, 100, 50)
+ok('zoomView keeps the anchor point fixed and clamps to 0.05..4', zv.k === 2 && zv.tx === -100 && zv.ty === -50 && zoomView({ tx: 0, ty: 0, k: 1 }, 100, 0, 0).k === 4 && zoomView({ tx: 0, ty: 0, k: 1 }, 0.0001, 0, 0).k === 0.05, zv)
+ok('toWorldPoint undoes the transform', (() => { const p = toWorldPoint({ tx: 100, ty: 20, k: 2 }, 300, 220); return p.x === 100 && p.y === 100 })())
+ok('arrowPath: end points and angle inside the box', (() => { const a = arrowPath({ kind: 'arrow', x: 100, y: 100, w: -40, h: -40 }); return a.x1 === 40 && a.y1 === 40 && a.x2 === 0 && a.y2 === 0 && Math.abs(a.ang + 3 * Math.PI / 4) < 1e-9 })())
+ok('penPath: path relative to the stroke box', penPath({ kind: 'pen', x: 10, y: 10, w: 0, h: 0, points: [[0, 0], [20, 5]] }) === 'M0,0 L20,5')
 
 // --- htmlEdit additions
 const page = '<body><div id="a"><p>one</p><img src="x.png"></div></body>'

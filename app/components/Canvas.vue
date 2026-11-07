@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Comment, ViewData, Anchor } from '~/types'
 import type { Canvas as CanvasT, CanvasOp } from '#shared/canvasOps'
-import { type Box, type GeomItem, isDirected, moveEndpoint, noteBox, round1, scaleItems } from '#shared/canvasGeometry'
+import { type Box, type GeomItem, arrowPath, isDirected, penPath, moveEndpoint, noteBox, round1, scaleItems } from '#shared/canvasGeometry'
 import type { SelRef } from '~/composables/useCanvasSelection'
 
 import { ArrowLeft, ArrowRight, Download, Maximize2, Minus, Pencil, Play, Plus, Presentation, ScanSearch, SlidersHorizontal, StickyNote, Trash2, X } from '@lucide/vue'
@@ -58,10 +58,10 @@ type Ov = { x: number, y: number, w: number, h: number, points: number[][] }
 
 const viewport = ref<HTMLElement>()
 const size = reactive({ w: 0, h: 0 })
-const tx = ref(0), ty = ref(0), k = ref(1)
+const view_ = useCanvasView(viewport, size)
+const { tx, ty, k, animate, pulse, zoomAt, centerOn, toWorld } = view_
 const interacting = ref<string | null>(null) // double-clicked board whose page receives input while on the canvas
 const focusBoard = ref<string | null>(null) // one board expanded to fill the window
-const animate = ref(false)
 const frames = new Map<string, HTMLIFrameElement>()
 const pins = reactive<Record<string, { x: number, y: number }>>({})
 const panning = ref(false)
@@ -102,13 +102,6 @@ function dims(b: BoardView) {
   return focusBoard.value === b.path && b.expand === 'fill' ? { w: size.w, h: size.h } : { w: b.w, h: b.h }
 }
 
-const FILL: Record<string, { bg: string, bd: string }> = {
-  yellow: { bg: '#fef3c7', bd: '#fcd34d' }, gray: { bg: '#f1f1f1', bd: '#d4d4d8' }, red: { bg: '#fecaca', bd: '#f87171' }, orange: { bg: '#fed7aa', bd: '#fb923c' },
-  green: { bg: '#bbf7d0', bd: '#4ade80' }, teal: { bg: '#99f6e4', bd: '#2dd4bf' }, blue: { bg: '#bfdbfe', bd: '#60a5fa' }, purple: { bg: '#e9d5ff', bd: '#c084fc' },
-  pink: { bg: '#fbcfe8', bd: '#f472b6' }, none: { bg: 'transparent', bd: 'transparent' },
-}
-const fillOf = (f: string) => FILL[f] ?? (/^#[0-9a-f]{6}$/i.test(f) ? { bg: f, bd: f } : FILL.yellow!)
-const TEXT_PX: Record<string, number> = { s: 14, m: 18, l: 24, xl: 32, xxl: 48 }
 
 const notes = computed<NoteView[]>(() => {
   const n = cv.value?.notes ?? {}
@@ -128,44 +121,10 @@ const selection = useCanvasSelection(allItems)
 const selectedBoard = computed(() => selection.refs.value.find(r => r.type === 'board')?.id ?? null)
 
 // ---- view transform --------------------------------------------------------------------------
-function pulse() {
-  animate.value = true
-  setTimeout(() => (animate.value = false), 320)
-}
-
 function fit(animated = false) {
-  if (animated) pulse()
-  if (!isCanvas.value || !size.w) { tx.value = 0; ty.value = 0; k.value = 1; return }
+  if (!isCanvas.value || !size.w) { view_.reset(); return }
   const nb = notes.value.map(noteBox)
-  const xs = [...boards.value.flatMap(b => [b.x, b.x + b.w]), ...nb.flatMap(n => [n.x, n.x + n.w])]
-  const ys = [...boards.value.flatMap(b => [b.y - 28, b.y + b.h]), ...nb.flatMap(n => [n.y, n.y + n.h])]
-  if (!xs.length) { tx.value = size.w / 2; ty.value = size.h / 2; k.value = 1; return }
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
-  const pad = 48
-  const nk = Math.min((size.w - pad * 2) / (maxX - minX || 1), (size.h - pad * 2) / (maxY - minY || 1), 1)
-  k.value = nk
-  tx.value = (size.w - (maxX - minX) * nk) / 2 - minX * nk
-  ty.value = (size.h - (maxY - minY) * nk) / 2 - minY * nk
-}
-
-function zoomAt(factor: number, cx = size.w / 2, cy = size.h / 2) {
-  const nk = Math.min(4, Math.max(0.05, k.value * factor))
-  const f = nk / k.value
-  tx.value = cx - (cx - tx.value) * f
-  ty.value = cy - (cy - ty.value) * f
-  k.value = nk
-}
-
-function centerOn(x: number, y: number) {
-  pulse()
-  tx.value = size.w / 2 - x * k.value
-  ty.value = size.h / 2 - y * k.value
-}
-
-/** Screen point -> world coordinates of the canvas. */
-function toWorld(cx: number, cy: number) {
-  const r = viewport.value!.getBoundingClientRect()
-  return { x: (cx - r.left - tx.value) / k.value, y: (cy - r.top - ty.value) / k.value }
+  view_.fitTo([...boards.value.map(b => ({ x: b.x, y: b.y - 28, w: b.w, h: b.h + 28 })), ...nb], animated)
 }
 
 // ---- focus (one board full window) -----------------------------------------------------------
@@ -261,7 +220,7 @@ function onPointerDown(e: PointerEvent) {
   if (!isCanvas.value || focusBoard.value || (e.button !== 0 && e.button !== 1)) return
   const t = e.target as HTMLElement
   // The toolbar, zoom pill and rename field always take their own presses; board header icons only yield to a drawing tool.
-  if (t.closest('.zoom, .focusbar, [role="toolbar"], .rename') || (!creationTool.value && t.closest('[data-ui]'))) return
+  if (t.closest('.zoom, .focusbar, [data-toolbar], .rename') || (!creationTool.value && t.closest('[data-ui]'))) return
   if (!t.closest('[contenteditable="true"], input, textarea')) e.preventDefault()
   if (canvasLevel.value && e.button === 0 && props.tool !== 'select' && props.tool !== 'hand') {
     // Creation tools: a drag draws the shape, a click drops a default-sized one.
@@ -522,7 +481,7 @@ function onWindowPointer(e: PointerEvent) { canvasFocused.value = !!viewport.val
 
 function onKey(e: KeyboardEvent) {
   shiftHeld = e.shiftKey
-  if ((e.target as HTMLElement)?.closest('input, textarea, select, [contenteditable]')) return
+  if ((e.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable]')) return
   const mod = e.metaKey || e.ctrlKey
   if (mod || e.altKey) {
     // Browser shortcuts stay the browser's, unless the canvas has the focus and is being edited.
@@ -688,14 +647,6 @@ function endpoint(n: NoteView, which: 'start' | 'end') {
   const x = which === 'start' ? n.x : n.x + n.w, y = which === 'start' ? n.y : n.y + n.h
   return { left: x + 'px', top: y + 'px', transform: `translate(-50%, -50%) scale(${1 / k.value})`, cursor: 'move' }
 }
-const arrowPath = (n: NoteView) => {
-  const b = noteBox(n), x1 = n.x - b.x, y1 = n.y - b.y, x2 = x1 + n.w, y2 = y1 + n.h
-  return { x1, y1, x2, y2, bw: Math.max(b.w, 1), bh: Math.max(b.h, 1), ang: Math.atan2(n.h, n.w) }
-}
-const penPath = (n: NoteView) => {
-  const b = noteBox(n), ox = n.x - b.x, oy = n.y - b.y
-  return n.points.map((p, i) => `${i ? 'L' : 'M'}${p[0]! + ox},${p[1]! + oy}`).join(' ')
-}
 const creatingPen = computed(() => creating.value?.pts ? creating.value.pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]},${p[1]}`).join(' ') : '')
 const inCanvasPage = computed(() => isCanvas.value && !focusBoard.value)
 
@@ -755,7 +706,7 @@ watch(isCanvas, () => nextTick(() => fit()))
             :ref="focusRename"
             class="rename"
             data-ui
-            :value="b.title"
+            :default-value="b.title"
             aria-label="Board name"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
             @keydown.esc.stop="commitRename(b, $event, true)"

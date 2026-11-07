@@ -29,6 +29,7 @@ const value = computed(() => (props.tool === 'line' ? 'arrow' : props.tool))
     role="toolbar"
     aria-label="Canvas tools"
     data-ui
+    data-toolbar
     @pointerdown.stop
     @click.stop
     @update:model-value="(v) => v && emit('update:tool', v as Tool)"

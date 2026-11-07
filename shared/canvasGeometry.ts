@@ -148,3 +148,38 @@ export function moveEndpoint(it: { x: number, y: number, w: number, h: number },
   if (which === 'end') return { x: it.x, y: it.y, w: round1(it.w + dx), h: round1(it.h + dy) }
   return { x: round1(it.x + dx), y: round1(it.y + dy), w: round1(it.w - dx), h: round1(it.h - dy) }
 }
+
+// ---- view transform (pan/zoom) ------------------------------------------------------------------
+export interface View { tx: number, ty: number, k: number }
+export const MIN_ZOOM = 0.05
+export const MAX_ZOOM = 4
+
+/** The view that shows all boxes centred with `pad` px around them, never zoomed in past `maxK`. Null when there are none. */
+export function fitView(boxes: Box[], size: { w: number, h: number }, pad = 48, maxK = 1): View | null {
+  const u = unionBox(boxes)
+  if (!u) return null
+  const k = Math.min((size.w - pad * 2) / (u.w || 1), (size.h - pad * 2) / (u.h || 1), maxK)
+  return { k, tx: (size.w - u.w * k) / 2 - u.x * k, ty: (size.h - u.h * k) / 2 - u.y * k }
+}
+
+/** Zooms by `factor` keeping the screen point (cx, cy) fixed. */
+export function zoomView(v: View, factor: number, cx: number, cy: number): View {
+  const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.k * factor))
+  const f = k / v.k
+  return { k, tx: cx - (cx - v.tx) * f, ty: cy - (cy - v.ty) * f }
+}
+
+/** Screen point (relative to the canvas element) to world coordinates. */
+export const toWorldPoint = (v: View, sx: number, sy: number) => ({ x: (sx - v.tx) / v.k, y: (sy - v.ty) / v.k })
+
+/** Line or arrow inside its own box (svg user space): end points, box size and the angle of the head. */
+export function arrowPath(n: { kind: string, x: number, y: number, w: number, h: number }) {
+  const b = noteBox(n), x1 = n.x - b.x, y1 = n.y - b.y, x2 = x1 + n.w, y2 = y1 + n.h
+  return { x1, y1, x2, y2, bw: Math.max(b.w, 1), bh: Math.max(b.h, 1), ang: Math.atan2(n.h, n.w) }
+}
+
+/** Pen stroke as an svg path, relative to the stroke's box. */
+export function penPath(n: { kind: string, x: number, y: number, w: number, h: number, points: number[][] }) {
+  const b = noteBox(n), ox = n.x - b.x, oy = n.y - b.y
+  return n.points.map((p, i) => `${i ? 'L' : 'M'}${p[0]! + ox},${p[1]! + oy}`).join(' ')
+}

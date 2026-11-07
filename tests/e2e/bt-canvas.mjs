@@ -9,7 +9,7 @@ const cj = async () => { await pg.waitForTimeout(2600); const r = await api(`/ap
 const canvasJson = () => new Promise(res => { import('node:child_process').then(({ execSync }) => { execSync(`curl -s -H "authorization: Bearer ${process.env.T}" ${B}/api/artifacts/${id}/export -o /tmp/cv.zip`); res(JSON.parse(execSync(`python3 -c "import zipfile;print(zipfile.ZipFile('/tmp/cv.zip').read('canvas.json').decode())"`).toString())) }) })
 await pg.goto(`${B}/a/${id}`); await pg.waitForSelector('iframe'); await pg.waitForTimeout(900)
 await pg.click('button:has-text("Edit")'); await pg.waitForTimeout(600)
-ok('toolbar appears at canvas level', await pg.locator('[role=toolbar][aria-label="Canvas tools"]').isVisible())
+ok('toolbar appears at canvas level', await pg.locator('[data-toolbar][aria-label="Canvas tools"]').isVisible())
 ok('starts at canvas level (not focused) for a multi-board canvas', await pg.locator('.focusbar').count() === 0)
 const stage = await pg.locator('.canvas').boundingBox()
 await pg.screenshot({ path: 'cv-0.png' })
