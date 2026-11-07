@@ -46,6 +46,8 @@ const emit = defineEmits<{
   pickElement: [p: { board: string, id: string }]
   canvasOp: [op: CanvasOp]
   canvasOps: [ops: CanvasOp[]]
+  align: [mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom']
+  distribute: [axis: 'x' | 'y']
   editContent: [path: string]
   play: [path: string]
   tweak: [values: Record<string, unknown>]
@@ -163,7 +165,7 @@ const layersOpen = ref(true)
             @pick-element="emit('pickElement', $event)"
           />
         </section>
-      <BoardPanel :sel="canvasSel" :canvas="canvas" :is-canvas="isCanvas" :board-count="boardCount" @ops="emit('canvasOps', $event)" @edit-content="emit('editContent', $event)" @play="emit('play', $event)" />
+      <BoardPanel :sel="canvasSel" :canvas="canvas" :is-canvas="isCanvas" :board-count="boardCount" @ops="emit('canvasOps', $event)" @align="emit('align', $event)" @distribute="emit('distribute', $event)" @edit-content="emit('editContent', $event)" @play="emit('play', $event)" />
       </template>
       <section v-if="!isCanvas && elementLevel">
         <h3>Canvas</h3>

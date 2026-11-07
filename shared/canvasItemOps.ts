@@ -87,8 +87,8 @@ export function clipBox(clip: ClipPayload): Box | null {
  * Operations that paste the clipboard moved by (dx, dy). Notes get new ids; boards are duplicated (their files are
  * copied by the server). Group, lock and arrow bindings are not carried over: they refer to the originals.
  */
-export function pasteOps(clip: ClipPayload, d: { dx: number, dy: number }, newId: () => string): { ops: CanvasOp[], noteIds: string[] } {
-  const ops: CanvasOp[] = [], noteIds: string[] = []
+export function pasteOps(clip: ClipPayload, d: { dx: number, dy: number }, newId: () => string): { ops: CanvasOp[], noteIds: string[], boardPaths: string[] } {
+  const ops: CanvasOp[] = [], noteIds: string[] = [], boardPaths: string[] = []
   const r1 = (n: number) => Math.round(n * 10) / 10
   for (const { note } of clip.notes) {
     if (!NOTE_KINDS.includes((note.kind ?? 'sticky') as never)) continue
@@ -99,6 +99,12 @@ export function pasteOps(clip: ClipPayload, d: { dx: number, dy: number }, newId
     noteIds.push(id)
     ops.push({ type: 'addNote', id, note: copy } as CanvasOp)
   }
-  for (const b of clip.boards) ops.push({ type: 'duplicateBoard', path: b.path, x: r1((+b.entry.x || 0) + d.dx), y: r1((+b.entry.y || 0) + d.dy) })
-  return { ops, noteIds }
+  for (const b of clip.boards) {
+    // The copy gets a path chosen here, so the caller knows what to select afterwards.
+    const dot = b.path.lastIndexOf('.'), copyTo = `${b.path.slice(0, dot).replace(/-[a-z0-9]{6}$/, '')}-${newId().replace(/^nt/, '')}${b.path.slice(dot)}`
+    const ok = copyTo.split('/').every(seg => seg.length <= 80)
+    if (ok) boardPaths.push(copyTo)
+    ops.push({ type: 'duplicateBoard', path: b.path, x: r1((+b.entry.x || 0) + d.dx), y: r1((+b.entry.y || 0) + d.dy), ...(ok ? { copyTo } : {}) })
+  }
+  return { ops, noteIds, boardPaths }
 }

@@ -1,6 +1,6 @@
 import type { CanvasOp } from '#shared/canvasOps'
 import { type ClipPayload, clipBox, copyPayload, pasteOps } from '#shared/canvasItemOps'
-import { noteKey } from '#shared/canvasItemOps'
+import { boardKey, noteKey } from '#shared/canvasItemOps'
 import type { useCanvasSelection } from './useCanvasSelection'
 
 /** Copy, paste, duplicate and z-order of the selection. Everything it does goes out as one batch through `send`. */
@@ -12,14 +12,17 @@ export function useCanvasClipboard(opts: {
   const clip = shallowRef<ClipPayload | null>(null)
   let pastes = 0
   const hasClip = computed(() => !!clip.value && (clip.value.notes.length > 0 || clip.value.boards.length > 0))
-  const snapshot = () => copyPayload(opts.canvas() as never, selection.refs.value)
+  /** What is selected, without locked items (they cannot be moved, so they are not cloned either). */
+  const snapshot = () => copyPayload(opts.canvas() as never, selection.selected.value.filter(i => !i.locked).map(i => ({ type: i.key[0] === 'b' ? 'board' as const : 'note' as const, id: i.key.slice(2) })))
 
   /** Pastes copies moved by `d`; the pasted notes become the selection. */
   function pasteClip(c: ClipPayload, d: { dx: number, dy: number }) {
-    const r = pasteOps(c, d, opts.newId)
+    // A board that was deleted since it was copied cannot be duplicated: leave it out rather than fail the whole paste.
+    const live = (opts.canvas() as { boards?: Record<string, unknown> } | null)?.boards ?? {}
+    const r = pasteOps({ ...c, boards: c.boards.filter(b => Object.hasOwn(live, b.path)) }, d, opts.newId)
     if (!r.ops.length) return false
     send(...r.ops)
-    nextTick(() => selection.set(r.noteIds.map(noteKey)))
+    nextTick(() => selection.set([...r.noteIds.map(noteKey), ...r.boardPaths.map(boardKey)]))
     return true
   }
   function copy() {

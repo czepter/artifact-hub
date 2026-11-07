@@ -31,7 +31,7 @@ export type CanvasOp =
   | { type: 'deleteNote', id: string }
   | { type: 'reorderNotes', ids: string[], mode: ReorderMode }
   /** Copies a board (its entry and its HTML file). `x`/`y` default to a 40px offset from the original. */
-  | { type: 'duplicateBoard', path: string, title?: string, x?: number, y?: number }
+  | { type: 'duplicateBoard', path: string, title?: string, x?: number, y?: number, /** Path for the copy (chosen by the caller so it can select it); default `<name>-copy.html`. */ copyTo?: string }
 
 export interface Canvas {
   v?: number, title?: string, launch?: unknown, pages?: unknown[], designSystems?: unknown[]
@@ -271,7 +271,11 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         const dot = op.path.lastIndexOf('.'), slash = op.path.lastIndexOf('/')
         const stem = op.path.slice(0, dot).replace(/-copy(-\d+)?$/, ''), ext = op.path.slice(dot)
         let path = '', n = 1
-        do { path = `${stem}-copy${n > 1 ? '-' + n : ''}${ext}`; n++ } while (taken.has(path) || canvas.boards[path])
+        if (op.copyTo !== undefined) {
+          if (typeof op.copyTo !== 'string' || !BOARD_PATH.test(op.copyTo)) throw new CanvasError(400, 'Invalid copy path')
+          if (taken.has(op.copyTo) || Object.hasOwn(canvas.boards, op.copyTo)) throw new CanvasError(409, `A file named ${op.copyTo} already exists`)
+          path = op.copyTo
+        } else do { path = `${stem}-copy${n > 1 ? '-' + n : ''}${ext}`; n++ } while (taken.has(path) || canvas.boards[path])
         if (!BOARD_PATH.test(path) || slash > dot) throw new CanvasError(400, 'Cannot name the copy')
         const title = (op.title ?? `${src.title ?? op.path} copy`).toString().slice(0, 80)
         const copy: Record<string, unknown> = JSON.parse(JSON.stringify(src))

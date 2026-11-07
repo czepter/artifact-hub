@@ -37,6 +37,8 @@ interface CanvasApi {
   boardAtPoint: (x: number, y: number) => { path: string, x: number, y: number } | null
   selectBoard: (path: string | null) => void
   selectNote: (id: string | null) => void
+  align: (mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom') => void
+  distribute: (axis: 'x' | 'y') => void
 }
 
 const data = ref<ViewData | null>(null)
@@ -70,7 +72,7 @@ const history = ref<{ paths: string[], toVersion: number }[]>([])
 const pending = new Map<string, Record<string, unknown>[]>()
 const tool = ref<Tool>('select')
 const toolLock = ref(false)
-watch(tool, (t) => { if (t === 'select' || t === 'hand') toolLock.value = false })
+watch(tool, () => (toolLock.value = false)) // picking any tool releases the lock
 // Dragging moves things freely by default; 'flow' makes a drag reorder elements inside the page flow instead.
 const dragMode = ref<'free' | 'flow'>('free')
 onMounted(() => { try { if (localStorage.getItem('hub_dragmode') === 'flow') dragMode.value = 'flow' } catch {} })
@@ -858,6 +860,8 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         @pick-element="pickElement"
         @canvas-op="onCanvasOp"
         @canvas-ops="onCanvasOps"
+        @align="(m) => canvasRef?.align(m)"
+        @distribute="(a) => canvasRef?.distribute(a)"
         @edit-content="editContent"
         @play="playBoard"
         @tweak="onTweakChange"

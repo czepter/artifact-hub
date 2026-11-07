@@ -44,9 +44,10 @@ const v2 = await t.version()
 const login = await pg.locator('[data-board][data-path="screens/Login.html"]').boundingBox()
 await pg.mouse.click(center(login).x, center(login).y); await pg.keyboard.press('Control+d'); await t.settle()
 const view = await t.view()
-ok('duplicating a board adds an entry and a byte-exact file copy in one version', view.canvas.boards['screens/Login-copy.html'] && view.files.some(f => f.path === 'screens/Login-copy.html') && await t.version() === v2 + 1, Object.keys(view.canvas.boards))
+let copyPath = ''
+ok('duplicating a board adds an entry and a byte-exact file copy in one version', (copyPath = Object.keys(view.canvas.boards).find(p => p.startsWith('screens/Login-'))) && view.files.some(f => f.path === copyPath) && await t.version() === v2 + 1, Object.keys(view.canvas.boards))
 await pg.keyboard.press('Control+z'); await t.settle(3000)
-ok('undo removes the board entry', !(await t.canvas()).boards['screens/Login-copy.html'])
+ok('undo removes the board entry', !(await t.canvas()).boards[copyPath])
 
 // z-order
 const order = async () => (await t.canvas()).noteOrder

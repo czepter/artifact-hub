@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { Comment, ViewData, Anchor } from '~/types'
 import { orderedNoteIds, type Canvas as CanvasT, type CanvasOp } from '#shared/canvasOps'
-import { type Box, type GeomItem, HANDLES, arrowPath, boxesIntersect, constrainCreate, isDirected, itemBox, noteBox, normBox, penPath, round1 } from '#shared/canvasGeometry'
-import { deleteOps, nudgeOps } from '#shared/canvasItemOps'
+import { type AlignMode, type Box, type GeomItem, HANDLES, alignPatches, arrowPath, distributePatches, boxesIntersect, constrainCreate, isDirected, itemBox, noteBox, normBox, penPath, round1 } from '#shared/canvasGeometry'
+import { deleteOps, nudgeOps, patchOps } from '#shared/canvasItemOps'
 import type { SelRef } from '~/composables/useCanvasSelection'
 
 import { ArrowLeft, ArrowRight, Maximize2, Minus, Play, Plus, X } from '@lucide/vue'
@@ -74,7 +74,7 @@ const boardOv = reactive<Record<string, Partial<Ov>>>({})
 const noteOv = reactive<Record<string, Partial<Ov>>>({})
 const marquee = ref<Box | null>(null)
 const spaceHeld = ref(false)
-let lastWorld: { x: number, y: number } | null = null
+let lastClient: { x: number, y: number } | null = null // pointer over the canvas, for paste; cleared when it leaves
 const creating = ref<{ tool: Tool, x: number, y: number, w: number, h: number, pts?: number[][] } | null>(null)
 const editingNote = ref<string | null>(null)
 const renamingBoard = ref<string | null>(null)
@@ -118,10 +118,12 @@ const notes = computed<NoteView[]>(() => {
   })
 })
 
+const { heights: noteH, measure: measureNotes } = useNoteHeights(viewport)
+
 /** Everything selectable, with its geometry as shown right now (live drag overrides included). */
 const allItems = computed<GeomItem[]>(() => [
   ...boards.value.map(b => ({ key: boardKey(b.path), kind: 'board', x: b.x, y: b.y, w: b.w, h: b.h, locked: b.locked })),
-  ...notes.value.map(n => ({ key: noteKey(n.id), kind: n.kind, x: n.x, y: n.y, w: n.w, h: isDirected(n.kind) ? n.h : (n.h || noteBox(n).h), points: n.points, locked: n.locked })),
+  ...notes.value.map(n => ({ key: noteKey(n.id), kind: n.kind, x: n.x, y: n.y, w: n.w, h: isDirected(n.kind) ? n.h : (noteH[n.id] ?? (n.h || noteBox(n).h)), points: n.points, locked: n.locked })),
 ])
 const selection = useCanvasSelection(allItems)
 const gestures = useCanvasGestures(selection, boardOv, noteOv, k, () => allItems.value.filter(i => !selection.has(i.key)).map(itemBox))
@@ -186,6 +188,7 @@ function navKeys(enabled: boolean) {
 }
 
 // ---- selection ---------------------------------------------------------------------------------
+watch(notes, () => nextTick(measureNotes), { flush: 'post' })
 watch(() => (canvasLevel.value ? selection.refs.value : []), v => emit('canvasSelect', v), { deep: true })
 function selectBoard(path: string | null) { selection.only(path ? boardKey(path) : null) }
 function selectNote(id: string | null) { selection.only(id ? noteKey(id) : null) }
@@ -229,7 +232,7 @@ function onPointerDown(e: PointerEvent) {
   // The toolbar, zoom pill and rename field always take their own presses; board header icons only yield to a drawing tool.
   if (t.closest('.zoom, .focusbar, [data-toolbar], .rename') || (!creationTool.value && t.closest('[data-ui]'))) return
   if (!t.closest('[contenteditable="true"], input, textarea')) e.preventDefault()
-  if (canvasLevel.value && e.button === 0 && props.tool !== 'select' && props.tool !== 'hand') {
+  if (canvasLevel.value && e.button === 0 && props.tool !== 'select' && props.tool !== 'hand' && !spaceHeld.value) {
     // Creation tools: a drag draws the shape, a click drops a default-sized one.
     const w = toWorld(e.clientX, e.clientY)
     drag = props.tool === 'pen' ? { kind: 'pen', pts: [[w.x, w.y]], moved: false } : { kind: 'create', tool: props.tool, sx: w.x, sy: w.y, moved: false }
@@ -265,7 +268,7 @@ function onNoteDown(e: PointerEvent, n: NoteView) {
 }
 
 function onPointerMove(e: PointerEvent) {
-  if (viewport.value) lastWorld = toWorld(e.clientX, e.clientY)
+  lastClient = { x: e.clientX, y: e.clientY }
   if (gestures.active()) { if (gestures.onMove(e) === 'start') capture(e); return }
   if (!drag) return
   const d = drag
@@ -378,7 +381,7 @@ function onPointerUp(e: PointerEvent) {
 }
 
 function onViewportClick(e: MouseEvent) {
-  if (justDragged) return
+  if (justDragged || e.shiftKey) return // shift-click on empty canvas leaves the selection alone
   if ((e.target as HTMLElement).closest('[data-board], [data-ui], [data-note], .pin, [data-handle]')) return
   interacting.value = null
   selection.clear()
@@ -419,8 +422,8 @@ function onContextMenu(e: MouseEvent) {
   const w = toWorld(e.clientX, e.clientY)
   const boardEl = t.closest('[data-board]') as HTMLElement | null
   const noteEl = t.closest('[data-note]') as HTMLElement | null
-  if (noteEl?.dataset.id) { ctx.value = { type: 'note', id: noteEl.dataset.id, x: w.x, y: w.y }; if (canvasLevel.value) selectNote(noteEl.dataset.id) }
-  else if (boardEl?.dataset.path) { ctx.value = { type: 'board', id: boardEl.dataset.path, x: w.x, y: w.y }; selectBoard(boardEl.dataset.path) }
+  if (noteEl?.dataset.id) { ctx.value = { type: 'note', id: noteEl.dataset.id, x: w.x, y: w.y }; if (canvasLevel.value && !selection.has(noteKey(noteEl.dataset.id))) selectNote(noteEl.dataset.id) }
+  else if (boardEl?.dataset.path) { ctx.value = { type: 'board', id: boardEl.dataset.path, x: w.x, y: w.y }; if (!selection.has(boardKey(boardEl.dataset.path))) selectBoard(boardEl.dataset.path) } // a right-click inside the selection keeps it
   else ctx.value = { type: 'canvas', id: '', x: w.x, y: w.y }
 }
 function ctxDeleteBoard() {
@@ -442,12 +445,15 @@ function handleMod(k: KeyInfo): boolean {
   if (c === 'KeyC' && !k.shift) return board_.copy()
   if (c === 'KeyV' && !k.shift) return board_.pasteAtPointer()
   if (c === 'KeyD' && !k.shift) return board_.duplicate()
-  if ((c === 'BracketRight' || c === 'BracketLeft') && !k.shift) return board_.reorder(c === 'BracketRight' ? 'front' : 'back')
+  if ((k.key === ']' || k.key === '[') && !k.shift) return board_.reorder(k.key === ']' ? 'front' : 'back')
   return false
 }
 
 // ---- copy, paste, duplicate, z-order ---------------------------------------------------------------
-const board_ = useCanvasClipboard({ canvas: () => cv.value, selection, send, newId: uid, pointer: () => lastWorld })
+const board_ = useCanvasClipboard({ canvas: () => cv.value, selection, send, newId: uid, pointer: () => (lastClient ? toWorld(lastClient.x, lastClient.y) : null) })
+/** Align or distribute the selection (from the side panel). */
+const align = (mode: AlignMode) => send(...patchOps(alignPatches(selection.selected.value, mode)))
+const distribute = (axis: 'x' | 'y') => send(...patchOps(distributePatches(selection.selected.value, axis)))
 function zoomToSelection() {
   const b = selection.bbox.value
   if (b) view_.fitTo([b], true, 2)
@@ -467,13 +473,13 @@ function handleKey(input: string | KeyInfo) {
   if (canvasLevel.value) {
     const t = TOOL_KEYS[key.toLowerCase()]
     if (t && key.length === 1) { emit('tool', t); return }
+    if ((key === ']' || key === '[') && canvasFocused.value && board_.reorder(key === ']' ? 'forward' : 'backward')) return // by the character, so it works on any layout
     // Keys 1-9 pick the toolbar slots; Shift+1 fits everything and Shift+2 the selection. By physical key, so it works on any layout.
     const digit = /^Digit([1-9])$/.exec(k.code ?? '')?.[1]
     if (digit && !k.shift) { emit('tool', TOOL_ORDER[+digit - 1]!); return }
     if (k.shift && k.code === 'Digit1') { fit(true); return }
     if (k.shift && k.code === 'Digit2') { zoomToSelection(); return }
     if (key.toLowerCase() === 'q' && creationTool.value) { emit('toolLock', !props.toolLock); return } // lock the drawing tool
-    if ((k.code === 'BracketRight' || k.code === 'BracketLeft') && canvasFocused.value) { board_.reorder(k.code === 'BracketRight' ? 'forward' : 'backward'); return }
     if (key === 'Escape') { emit('tool', 'select'); emit('toolLock', false); selection.clear(); editingNote.value = null; marquee.value = null; return }
     if (canvasFocused.value) {
       if ((key === 'Delete' || key === 'Backspace') && selection.count.value) { deleteSelection(); return }
@@ -515,6 +521,7 @@ function onWindowPointer(e: PointerEvent) {
   canvasFocused.value = !!viewport.value?.contains(t) && !t.closest('[data-toolbar], .zoom, .focusbar, [data-ui], button, input, textarea')
 }
 
+const onBlur = () => { spaceHeld.value = false }
 function onKeyUp(e: KeyboardEvent) { shiftHeld = e.shiftKey; if (e.key === ' ') spaceHeld.value = false }
 
 function onKey(e: KeyboardEvent) {
@@ -691,7 +698,7 @@ function endpoint(n: NoteView, which: 'start' | 'end') {
 const creatingPen = computed(() => creating.value?.pts ? creating.value.pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]},${p[1]}`).join(' ') : '')
 const inCanvasPage = computed(() => isCanvas.value && !focusBoard.value)
 
-defineExpose({ boardAtPoint, editCmd, reloadBoard, firstBoard, selectedBoardPath, navKeys, fit, centerOn, pins, broadcast, view, draftPos, enterFocus, exitFocus, step, startPresent, focusBoard, focusIndex, boardCount: computed(() => boards.value.length), selectBoard, selectNote, zoomAt })
+defineExpose({ align, distribute, boardAtPoint, editCmd, reloadBoard, firstBoard, selectedBoardPath, navKeys, fit, centerOn, pins, broadcast, view, draftPos, enterFocus, exitFocus, step, startPresent, focusBoard, focusIndex, boardCount: computed(() => boards.value.length), selectBoard, selectNote, zoomAt })
 
 let ro: ResizeObserver | undefined
 onMounted(() => {
@@ -706,7 +713,7 @@ onMounted(() => {
   window.addEventListener('keydown', onKey)
   window.addEventListener('pointerdown', onWindowPointer, true)
   window.addEventListener('keyup', onKeyUp)
-  window.addEventListener('blur', () => (spaceHeld.value = false))
+  window.addEventListener('blur', onBlur)
   viewport.value!.addEventListener('wheel', onWheel, { passive: false })
 })
 onBeforeUnmount(() => {
@@ -714,6 +721,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('keyup', onKeyUp)
+  window.removeEventListener('blur', onBlur)
   window.removeEventListener('pointerdown', onWindowPointer, true)
 })
 watch(isCanvas, () => nextTick(() => fit()))
@@ -728,6 +736,7 @@ watch(isCanvas, () => nextTick(() => fit()))
     :class="{ panning, page: !isCanvas, focus: !!focusBoard, tool: canvasLevel && tool !== 'select' && tool !== 'hand', hand: (tool === 'hand' || spaceHeld) && canvasLevel }"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
+    @pointerleave="lastClient = null"
     @pointerup="onPointerUp"
     @pointercancel="onPointerUp"
     @click="onViewportClick"

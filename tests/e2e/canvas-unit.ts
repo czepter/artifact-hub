@@ -94,6 +94,19 @@ ok('duplicateBoard drops locked and group on the copy', (() => { const c = JSON.
 
 throws('bind to a prototype key is not a target', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { kind: 'arrow', bind: { end: { type: 'board', id: 'constructor' } } } }]), 400)
 throws('reorderNotes with a prototype key -> 404', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: {} }, { type: 'reorderNotes', ids: ['constructor'], mode: 'front' }]), 404)
+ok('duplicateBoard copyTo names the copy; existing path 409; bad path 400', (() => {
+  const base = applyCanvasOps(null, [], [{ type: 'addBoard', path: 'a.html', x: 0, y: 0, w: 100, h: 100 }]).canvas
+  const r = applyCanvasOps(base, ['a.html'], [{ type: 'duplicateBoard', path: 'a.html', copyTo: 'b.html' }])
+  let e1 = 0, e2 = 0
+  try { applyCanvasOps(r.canvas, ['a.html', 'b.html'], [{ type: 'duplicateBoard', path: 'a.html', copyTo: 'b.html' }]) } catch (e: any) { e1 = e.status }
+  try { applyCanvasOps(base, ['a.html'], [{ type: 'duplicateBoard', path: 'a.html', copyTo: '../x.html' }]) } catch (e: any) { e2 = e.status }
+  return r.copyFiles[0]!.to === 'b.html' && r.canvas.boards['b.html'] && e1 === 409 && e2 === 400
+})())
+{
+  let n = 0
+  const pr = pasteOps({ notes: [], boards: [{ path: 'screens/Home.html', entry: { x: 0, y: 0, w: 10, h: 10 } }] }, { dx: 5, dy: 5 }, () => 'nt' + 'abc12' + ++n)
+  ok('pasteOps names board copies and reports their paths for selection', pr.boardPaths.length === 1 && pr.boardPaths[0] === 'screens/Home-abc121.html' && (pr.ops[0] as any).copyTo === pr.boardPaths[0], pr)
+}
 // limits stay
 throws('more than 200 operations rejected', () => applyCanvasOps(null, [], Array.from({ length: 201 }, (_, i) => ({ type: 'addNote' as const, id: 'n' + i, note: {} }))), 413)
 throws('more than 1000 notes rejected', () => { let c: any = null; for (let i = 0; i < 6; i++) c = applyCanvasOps(c, [], Array.from({ length: 200 }, (_, j) => ({ type: 'addNote' as const, id: `n${i}_${j}`, note: {} }))).canvas }, 413)
@@ -238,7 +251,7 @@ ok('noteGeometry: defaults (sticky 240 wide, others 360)', noteGeometry({}).w ==
   ok('clipBox covers everything copied', (() => { const b = clipBox(copyPayload(cv, [{ type: 'note', id: 'r' }, { type: 'board', id: 'b.html' }]))!; return b.x === 5 && b.y === 0 && b.w === 595 })())
   let n = 0
   const pr = pasteOps(copyPayload(cv, refs), { dx: 20, dy: 30 }, () => 'p' + ++n)
-  ok('pasteOps: new ids, moved, legacy kinds skipped, group/lock/bind dropped, boards duplicated at the new place', pr.noteIds.join() === 'p1,p2' && same(pr.ops[1], { type: 'addNote', id: 'p2', note: { kind: 'rect', x: 25, y: 35, w: 50, h: 40 } }) && same(pr.ops[2], { type: 'duplicateBoard', path: 'a.html', x: 20, y: 30 }), pr.ops)
+  ok('pasteOps: new ids, moved, legacy kinds skipped, group/lock/bind dropped, boards duplicated at the new place', pr.noteIds.join() === 'p1,p2' && same(pr.ops[1], { type: 'addNote', id: 'p2', note: { kind: 'rect', x: 25, y: 35, w: 50, h: 40 } }) && same(pr.ops[2], { type: 'duplicateBoard', path: 'a.html', x: 20, y: 30, copyTo: 'a-p3.html' }), pr.ops)
   const applied = applyCanvasOps(cv, ['a.html', 'b.html'], pr.ops)
   ok('pasted ops apply cleanly and leave the originals alone', Object.keys(applied.canvas.notes).length === 5 && applied.copyFiles[0]!.from === 'a.html' && applied.canvas.notes.r.x === 5, applied.copyFiles)
   ok('patchOps builds updates from patches', same(patchOps({ 'n:a': { x: 1 }, 'b:p.html': { y: 2 } }), [{ type: 'updateNote', id: 'a', patch: { x: 1 } }, { type: 'updateBoard', path: 'p.html', patch: { y: 2 } }]))

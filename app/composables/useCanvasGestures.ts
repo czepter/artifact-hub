@@ -65,11 +65,13 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
       for (const o of g.orig) setOverride(o.key, { x: round1(o.x + wx), y: round1(o.y + wy) })
     } else if (g.kind === 'resize') {
       const ex = g.handle.includes('e') ? 1 : g.handle.includes('w') ? -1 : 0, ey = g.handle.includes('s') ? 1 : g.handle.includes('n') ? -1 : 0
-      const oth = snapping ? others() : []
+      // Corner handles of a group keep the aspect ratio (Shift frees it); a single item is free (Shift keeps it).
+      const keepAspect = e.shiftKey !== (g.items.length > 1)
+      const oth = snapping && !(keepAspect && ex && ey) ? others() : []
       // Snap the edge being dragged to the edges and centres of other items.
       if (oth.length && ex) wx += snapLines([(ex > 0 ? g.bbox.x + g.bbox.w : g.bbox.x) + wx], oth.flatMap(o => [o.x, o.x + o.w / 2, o.x + o.w]), thr)
       if (oth.length && ey) wy += snapLines([(ey > 0 ? g.bbox.y + g.bbox.h : g.bbox.y) + wy], oth.flatMap(o => [o.y, o.y + o.h / 2, o.y + o.h]), thr)
-      const r = scaleItems(g.items, g.bbox, g.handle, { dx: wx, dy: wy, keepAspect: e.shiftKey, fromCenter: e.altKey })
+      const r = scaleItems(g.items, g.bbox, g.handle, { dx: wx, dy: wy, keepAspect, fromCenter: e.altKey })
       for (const [key, p] of Object.entries(r.patches) as [string, GeomPatch][]) setOverride(key, p)
       guides.value = oth.length ? guidesFor(r.box, oth) : []
     } else noteOv[g.id] = moveEndpoint(g.orig, g.which, wx, wy)

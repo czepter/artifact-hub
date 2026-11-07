@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { CanvasOp } from '#shared/canvasOps'
-import { boardKey, deleteOps, itemsFromCanvas, noteKey, patchOps } from '#shared/canvasItemOps'
+import { boardKey, deleteOps, itemsFromCanvas, noteKey } from '#shared/canvasItemOps'
 import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceBetween, Play, Plus, Trash2, Pencil } from '@lucide/vue'
 import { ButtonGroup } from '@/components/ui/button-group'
-import { alignPatches, distributePatches, type AlignMode } from '#shared/canvasGeometry'
+import type { AlignMode } from '#shared/canvasGeometry'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,7 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 
 const props = defineProps<{ sel: { type: 'board' | 'note', id: string }[], canvas: any, isCanvas: boolean, boardCount: number }>()
-const emit = defineEmits<{ ops: [ops: CanvasOp[]], editContent: [path: string], play: [path: string] }>()
+const emit = defineEmits<{ align: [mode: AlignMode], distribute: [axis: 'x' | 'y'], ops: [ops: CanvasOp[]], editContent: [path: string], play: [path: string] }>()
 
 // One selected item gets its own controls; several get a summary with the actions that apply to all.
 const one = computed(() => (props.sel.length === 1 ? props.sel[0]! : null))
@@ -29,8 +29,6 @@ const ALIGN: { mode: AlignMode, label: string, icon: any }[] = [
 ]
 const selItems = computed(() => itemsFromCanvas(props.canvas, props.sel))
 const movable = computed(() => selItems.value.filter(i => !i.locked).length)
-const align = (mode: AlignMode) => emit('ops', patchOps(alignPatches(selItems.value, mode)))
-const distribute = (axis: 'x' | 'y') => emit('ops', patchOps(distributePatches(selItems.value, axis)))
 function removeSelection() {
   const locked = (s: { type: string, id: string }) => !!(s.type === 'board' ? props.canvas?.boards?.[s.id] : props.canvas?.notes?.[s.id])?.locked
   emit('ops', deleteOps(props.sel.map(s => ({ key: s.type === 'board' ? boardKey(s.id) : noteKey(s.id), locked: locked(s) }))))
@@ -136,14 +134,14 @@ function addBoard() {
         <h4 class="sub">Align</h4>
         <div class="flex flex-wrap gap-2">
           <ButtonGroup>
-            <Button v-for="a in ALIGN.slice(0, 3)" :key="a.mode" size="icon-xs" variant="outline" :title="a.label" :aria-label="a.label" :disabled="movable < 2" @click="align(a.mode)"><component :is="a.icon" /></Button>
+            <Button v-for="a in ALIGN.slice(0, 3)" :key="a.mode" size="icon-xs" variant="outline" :title="a.label" :aria-label="a.label" :disabled="movable < 2" @click="emit('align', a.mode)"><component :is="a.icon" /></Button>
           </ButtonGroup>
           <ButtonGroup>
-            <Button v-for="a in ALIGN.slice(3)" :key="a.mode" size="icon-xs" variant="outline" :title="a.label" :aria-label="a.label" :disabled="movable < 2" @click="align(a.mode)"><component :is="a.icon" /></Button>
+            <Button v-for="a in ALIGN.slice(3)" :key="a.mode" size="icon-xs" variant="outline" :title="a.label" :aria-label="a.label" :disabled="movable < 2" @click="emit('align', a.mode)"><component :is="a.icon" /></Button>
           </ButtonGroup>
           <ButtonGroup>
-            <Button size="icon-xs" variant="outline" title="Distribute horizontally" aria-label="Distribute horizontally" :disabled="movable < 3" @click="distribute('x')"><AlignHorizontalSpaceBetween /></Button>
-            <Button size="icon-xs" variant="outline" title="Distribute vertically" aria-label="Distribute vertically" :disabled="movable < 3" @click="distribute('y')"><AlignVerticalSpaceBetween /></Button>
+            <Button size="icon-xs" variant="outline" title="Distribute horizontally" aria-label="Distribute horizontally" :disabled="movable < 3" @click="emit('distribute', 'x')"><AlignHorizontalSpaceBetween /></Button>
+            <Button size="icon-xs" variant="outline" title="Distribute vertically" aria-label="Distribute vertically" :disabled="movable < 3" @click="emit('distribute', 'y')"><AlignVerticalSpaceBetween /></Button>
           </ButtonGroup>
         </div>
         <div><Button size="xs" variant="outline" class="text-destructive" @click="confirmDeleteMany = true"><Trash2 />Delete all</Button></div>

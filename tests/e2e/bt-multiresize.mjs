@@ -18,25 +18,34 @@ await pg.mouse.click(stage.x + 1000, stage.y + 700); await pg.keyboard.press('Co
 ok('all items selected with one box and 8 handles', await pg.locator('.hd').count() === 8, await pg.locator('.hd').count())
 // corner handle (se = index 4), drag outwards
 const se = center(await pg.locator('.hd').nth(4).boundingBox())
-await drag(pg, se, { x: se.x + 120, y: se.y + 90 }, { mods: ['Shift'] })
+await drag(pg, se, { x: se.x + 120, y: se.y + 60 })
 await t.settle()
 const v1 = await t.version(), c1 = await t.canvas()
 ok('one gesture, one version', v1 === v0 + 1, [v0, v1])
 const b0 = c0.boards['screens/Poll.html'], b1 = c1.boards['screens/Poll.html']
 const f = b1.w / b0.w
 ok('board scaled', f > 1.05 && Math.abs(b1.h / b0.h - f) < 0.01, [b0, b1])
-ok('Shift kept the aspect ratio for every item (same factor)', Math.abs(c1.notes.st.w / c0.notes.st.w - f) < 0.02 && Math.abs(c1.notes.pn.points[2][0] / c0.notes.pn.points[2][0] - f) < 0.02 && Math.abs(c1.notes.pn.points[1][1] / c0.notes.pn.points[1][1] - f) < 0.03, [f, c1.notes])
+ok('a group corner handle keeps the aspect ratio by default: every item gets the same factor', Math.abs(c1.notes.st.w / c0.notes.st.w - f) < 0.02 && Math.abs(c1.notes.pn.points[2][0] / c0.notes.pn.points[2][0] - f) < 0.02 && Math.abs(c1.notes.pn.points[1][1] / c0.notes.pn.points[1][1] - f) < 0.03, [f, c1.notes])
 ok('arrow keeps its direction (negative width) and scales', c1.notes.ar.w < 0 && Math.abs(c1.notes.ar.w / c0.notes.ar.w - f) < 0.02 && Math.abs(c1.notes.ar.h / c0.notes.ar.h - f) < 0.03, c1.notes.ar)
 ok('sticky height stays automatic (not written)', c1.notes.st.h === c0.notes.st.h, c1.notes.st)
 ok('pen points scaled, stroke width untouched', c1.notes.pn.points.length === 3 && c1.notes.pn.strokeWidth === undefined)
 await pg.keyboard.press('Control+z'); await t.settle(2800)
 ok('one undo restores board, sticky, arrow and pen', geom(await t.canvas()) === g0)
+// Shift frees the aspect ratio of a group
+{
+  await pg.mouse.click(stage.x + 1000, stage.y + 700); await pg.keyboard.press('Control+a')
+  const h = center(await pg.locator('.hd').nth(4).boundingBox())
+  await drag(pg, h, { x: h.x + 150, y: h.y + 20 }, { mods: ['Shift'] }); await t.settle()
+  const c = await t.canvas(), a = c.boards['screens/Poll.html']
+  ok('Shift on a group corner scales width and height independently', Math.abs(a.w / 400 - a.h / 300) > 0.1, a)
+  await pg.keyboard.press('Control+z'); await t.settle(2500)
+}
 // shrink past the minimum: the whole selection stops together
 await pg.mouse.click(stage.x + 1000, stage.y + 700); await pg.keyboard.press('Control+a')
 const se2 = center(await pg.locator('.hd').nth(4).boundingBox())
 await drag(pg, se2, { x: se2.x - 2000, y: se2.y - 2000 }); await t.settle()
 const c2 = await t.canvas(), b2 = c2.boards['screens/Poll.html']
 const l2 = c2.boards['screens/Login.html']
-ok('clamped for the whole selection: the smallest board stops at 40, everything else keeps its relative layout', l2.w >= 39.9 && l2.h >= 39.9 && Math.abs(l2.w - 40) < 0.2 && Math.abs(b2.w / 400 - l2.w / 300) < 0.01 && c2.notes.st.w >= 8, [b2, l2, c2.notes.st])
+ok('clamped for the whole selection: the smallest board stops at 40, everything else keeps its relative layout', l2.w >= 39.9 && l2.h >= 39.9 && Math.abs(l2.h - 40) < 0.3 && Math.abs(b2.w / 400 - l2.w / 300) < 0.01 && c2.notes.st.w >= 8, [b2, l2, c2.notes.st])
 const clean = t.logs.filter(l => !/favicon|404/.test(l)); ok('no page errors', clean.length === 0, clean)
 await t.browser.close(); process.exit(results.fails ? 1 : 0)
