@@ -94,10 +94,10 @@ const emptyOpen = new Set<string>()
 .kids { margin: 0; padding: 0; }
 .row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; min-height: 26px; white-space: nowrap; overflow: hidden; }
 .row:hover { background: var(--hover); }
-.row.sel { background: #dbeafe; color: #1e3a8a; }
+.row.sel { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--fg); }
 .caret { width: 14px; height: 14px; display: inline-grid; place-items: center; border: 0; background: transparent; color: var(--muted); padding: 0; flex: none; cursor: pointer; }
 .ic { width: 14px; text-align: center; color: var(--muted); font-size: 11px; flex: none; }
-.row.sel .ic { color: #1e40af; }
+.row.sel .ic { color: var(--brand); }
 .kind { color: var(--muted); font-size: 11px; flex: none; }
 .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .txt { overflow: hidden; text-overflow: ellipsis; color: var(--fg); min-width: 0; }

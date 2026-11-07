@@ -106,7 +106,7 @@ const done = (e: Event) => emit('commit', ((e.target as HTMLElement).innerText ?
   <div
     v-if="labelled"
     data-note :data-id="n.id" class="note label" :class="cls"
-    :style="{ left: n.x + 'px', top: n.y + 'px', width: n.w + 'px', height: n.h + 'px', visibility: vis, fontSize: (TEXT_PX[n.size] ?? 18) + 'px', fontWeight: n.bold ? 700 : 400, color: n.color }"
+    :style="{ left: n.x + 'px', top: n.y + 'px', width: n.w + 'px', height: n.h + 'px', visibility: vis, fontSize: (TEXT_PX[n.size] ?? 18) + 'px', fontWeight: n.bold ? 700 : 400, color: n.color || (n.fill === 'none' ? 'var(--fg)' : '#1c1b19') }"
     @pointerdown="emit('down', $event)" @dblclick.stop="emit('edit')"
   >
     <div :ref="focusText" class="ntext" :contenteditable="editing" data-placeholder="Text" @blur="done" @keydown.stop="onKeys">{{ n.text }}</div>

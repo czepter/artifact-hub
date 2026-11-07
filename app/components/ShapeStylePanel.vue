@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { fillOf } from '~/utils/canvasStyle'
+import { themeInk } from '~/utils/canvasView'
 
 // Stroke, fill and arrowhead controls for the selected shapes, lines and drawings. A change applies to every
 // selected item it makes sense for, as one batch (one undo step).
@@ -20,7 +21,8 @@ const apply = (change: StyleChange) => emit('ops', styleOps(props.notes, change)
 const FILLS = ['none', 'gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink']
 const WIDTHS = [{ v: 1.5, label: 'Thin' }, { v: 2.5, label: 'Medium' }, { v: 4, label: 'Bold' }]
 const HEADS = [{ v: 'none', label: 'None' }, { v: 'arrow', label: 'Arrow' }, { v: 'triangle', label: 'Triangle' }, { v: 'dot', label: 'Dot' }, { v: 'bar', label: 'Bar' }]
-const stroke = computed(() => val('stroke', val('color', '#1c1b19')))
+const ink = themeInk()
+const stroke = computed(() => val('stroke', val('color', ink)))
 // What is drawn when a field is not stored (older canvases): width 2 for shapes and 2.5 for lines; arrows end in a head.
 const widthNow = computed(() => { const f = first.value; const w = f?.note.strokeWidth ?? (f?.kind === 'rect' || f?.kind === 'oval' ? 2 : 2.5); return WIDTHS.reduce((a, b) => (Math.abs(b.v - w) < Math.abs(a.v - w) ? b : a)).v })
 const headNote = computed(() => props.notes.find(n => n.kind === 'arrow' || n.kind === 'line') ?? null)

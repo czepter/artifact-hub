@@ -8,7 +8,15 @@ export interface NoteView {
 }
 
 /** Stroke colour: the new `stroke` field, else the older `color`. */
-export const strokeOf = (n: Pick<NoteView, 'stroke' | 'color'>) => n.stroke ?? n.color
+/** Without a stored colour the stroke follows the theme's ink, so it shows on both the light and the dark canvas. */
+export const strokeOf = (n: Pick<NoteView, 'stroke' | 'color'>) => n.stroke ?? (n.color || 'var(--fg)')
+/** The theme's ink as a #rrggbb value (for colour inputs that cannot take a CSS variable). */
+export function themeInk(): string {
+  if (typeof document === 'undefined') return '#1c1b19'
+  const el = document.createElement('i'); el.style.color = 'var(--fg)'; document.body.appendChild(el)
+  const rgb = getComputedStyle(el).color.match(/\d+/g) ?? ['28', '27', '25']; el.remove()
+  return '#' + rgb.slice(0, 3).map(v => (+v).toString(16).padStart(2, '0')).join('')
+}
 export const widthOf = (n: Pick<NoteView, 'kind' | 'strokeWidth'>) => n.strokeWidth ?? (n.kind === 'rect' || n.kind === 'oval' ? 2 : 2.5)
 /** svg dash pattern for a stroke style (dots rely on a round linecap). */
 export const dashOf = (style: string | undefined, w: number) => (style === 'dashed' ? `${w * 3.5} ${w * 2.5}` : style === 'dotted' ? `0.01 ${w * 2.2}` : undefined)

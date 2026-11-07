@@ -119,7 +119,7 @@ const rawNotes = computed<NoteView[]>(() => {
   // Back to front: `noteOrder` when the canvas has one, else the order the notes are stored in.
   return orderedNoteIds({ notes: n, noteOrder: cv.value?.noteOrder }).map((id) => {
     const v = n[id], o = noteOv[id] ?? {}, g = noteGeometry(v), kind = g.kind
-    return { id, kind, x: o.x ?? g.x, y: o.y ?? g.y, w: o.w ?? g.w, h: o.h ?? g.h, text: String(v.text ?? ''), fill: v.fill ?? (kind === 'sticky' ? 'yellow' : 'none'), color: v.color ?? '#1c1b19', size: v.size ?? 'm', bold: !!v.bold, points: o.points ?? g.points, locked: !!v.locked, group: v.group, src: v.src, fillStyle: v.fillStyle, stroke: v.stroke, strokeWidth: v.strokeWidth, strokeStyle: v.strokeStyle, roundness: v.roundness, arrowStart: v.arrowStart, arrowEnd: v.arrowEnd, bind: v.bind }
+    return { id, kind, x: o.x ?? g.x, y: o.y ?? g.y, w: o.w ?? g.w, h: o.h ?? g.h, text: String(v.text ?? ''), fill: v.fill ?? (kind === 'sticky' ? 'yellow' : 'none'), color: v.color ?? '', size: v.size ?? 'm', bold: !!v.bold, points: o.points ?? g.points, locked: !!v.locked, group: v.group, src: v.src, fillStyle: v.fillStyle, stroke: v.stroke, strokeWidth: v.strokeWidth, strokeStyle: v.strokeStyle, roundness: v.roundness, arrowStart: v.arrowStart, arrowEnd: v.arrowEnd, bind: v.bind }
   })
 })
 /** What an arrow can attach to: boards, rectangles, ovals, sticky notes and text, back to front. */
@@ -428,7 +428,7 @@ function onPointerUp(e: PointerEvent) {
       // Simplify the stroke (Ramer-Douglas-Peucker, 1 screen px) and keep it within 400 points; it is drawn as a smooth curve.
       const pts = fitPenPoints(d.pts.map(p => [p[0]! - x0, p[1]! - y0]), 1 / k.value, 399)
       const id = uid()
-      send({ type: 'addNote', id, note: { kind: 'pen', x: round(x0), y: round(y0), points: pts, color: '#1c1b19' } })
+      send({ type: 'addNote', id, note: { kind: 'pen', x: round(x0), y: round(y0), points: pts } })
       nextTick(() => selectNote(id))
     }
     return
@@ -878,8 +878,8 @@ watch(isCanvas, () => nextTick(() => fit()))
       <template v-if="creating && inCanvasPage">
         <div v-if="creating.tool === 'artboard'" class="draw artboard" :style="{ left: creating.x + 'px', top: creating.y + 'px', width: creating.w + 'px', height: creating.h + 'px' }" />
         <div v-else-if="creating.tool === 'rect' || creating.tool === 'oval'" class="draw" :class="{ oval: creating.tool === 'oval' }" :style="{ left: creating.x + 'px', top: creating.y + 'px', width: creating.w + 'px', height: creating.h + 'px' }" />
-        <svg v-else-if="creating.tool === 'arrow' || creating.tool === 'line'" class="draw-svg" overflow="visible" width="1" height="1" :style="{ left: creating.x + 'px', top: creating.y + 'px' }"><line x1="0" y1="0" :x2="creating.w" :y2="creating.h" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" /></svg>
-        <svg v-else-if="creating.tool === 'pen'" class="draw-svg" overflow="visible" width="1" height="1" style="left: 0; top: 0"><path :d="creatingPen" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <svg v-else-if="creating.tool === 'arrow' || creating.tool === 'line'" class="draw-svg" overflow="visible" width="1" height="1" :style="{ left: creating.x + 'px', top: creating.y + 'px' }"><line x1="0" y1="0" :x2="creating.w" :y2="creating.h" stroke="var(--brand)" stroke-width="2.5" stroke-linecap="round" /></svg>
+        <svg v-else-if="creating.tool === 'pen'" class="draw-svg" overflow="visible" width="1" height="1" style="left: 0; top: 0"><path :d="creatingPen" fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </template>
 
       <Button
@@ -946,12 +946,12 @@ watch(isCanvas, () => nextTick(() => fit()))
 .canvas.tool .board-shield { cursor: crosshair; }
 .bind-hl { position: absolute; border: solid var(--brand); border-radius: 4px; pointer-events: none; box-sizing: border-box; z-index: 4; }
 .canvas.eraser, .canvas.eraser .board-shield { cursor: cell; }
-.lock-badge { position: absolute; width: 14px; height: 14px; padding: 2px; border-radius: 4px; background: #fff; color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; transform-origin: 100% 100%; pointer-events: none; z-index: 5; }
+.lock-badge { position: absolute; width: 14px; height: 14px; padding: 2px; border-radius: 4px; background: #fff; color: var(--brand); box-shadow: 0 0 0 1px var(--brand); transform-origin: 100% 100%; pointer-events: none; z-index: 5; }
 .guide { position: absolute; background: var(--brand); pointer-events: none; z-index: 4; }
-.marquee { position: absolute; border: solid #3b82f6; background: rgba(59, 130, 246, .08); pointer-events: none; box-sizing: border-box; }
-.selbox { position: absolute; border: solid #3b82f6; pointer-events: none; box-sizing: border-box; }
-.hd { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid #3b82f6; border-radius: 2px; box-sizing: border-box; z-index: 5; }
-.draw { position: absolute; border: 2px dashed #3b82f6; background: rgba(59, 130, 246, .08); pointer-events: none; box-sizing: border-box; }
+.marquee { position: absolute; border: solid var(--brand); background: color-mix(in srgb, var(--brand) 8%, transparent); pointer-events: none; box-sizing: border-box; }
+.selbox { position: absolute; border: solid var(--brand); pointer-events: none; box-sizing: border-box; }
+.hd { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid var(--brand); border-radius: 2px; box-sizing: border-box; z-index: 5; }
+.draw { position: absolute; border: 2px dashed var(--brand); background: color-mix(in srgb, var(--brand) 8%, transparent); pointer-events: none; box-sizing: border-box; }
 .draw.oval { border-radius: 50%; }
 .draw.artboard { background: rgba(255, 255, 255, .6); }
 .draw-svg { position: absolute; pointer-events: none; }
