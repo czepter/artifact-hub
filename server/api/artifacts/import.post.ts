@@ -39,6 +39,6 @@ export default defineEventHandler(async (event) => {
   let title = String(getQuery(event).title ?? '').trim()
   const canvas = files.find(f => f.path === 'canvas.json')
   if (!title && canvas) { try { title = String(JSON.parse(Buffer.from(canvas.content, 'base64').toString('utf8')).title ?? '').trim() } catch {} }
-  const r = publish({ title: (title || 'Imported artifact').slice(0, 200), files, label: 'Imported .zip' })
+  const r = publish({ title: (title || 'Imported artifact').slice(0, 200), files, label: 'Imported .zip', workspaceId: getQuery(event).workspace ? String(getQuery(event).workspace) : undefined })
   return { ...r, url: `/a/${r.id}`, files: files.length, dropped }
 })

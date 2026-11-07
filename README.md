@@ -34,7 +34,21 @@ and refuses to start if either variable is set. Never put them in a deployed env
 MCP endpoint: `POST /mcp` (streamable HTTP, stateless).
 Tools: `guide`, `list_artifacts`, `create_artifact`, `get_artifact`, `read_file`, `publish_files`,
 `edit_file`, `read_comments`, `reply_comment`, `resolve_comment`, `share_link`,
-`data_list`, `data_get`, `data_set`, `data_delete`.
+`data_list`, `data_get`, `data_set`, `data_delete`, `list_workspaces`, `create_workspace`, `move_artifact`.
+`create_artifact` and `list_artifacts` take an optional `workspace` (id or name). Workspace tools follow the grant's scopes
+like the rest (`list_workspaces` needs read; `create_workspace` and `move_artifact` need write, so commenters never get them).
+
+## Workspaces
+A workspace is a named container (name, description, colour, icon) that groups artifacts. Every artifact is in exactly one;
+existing artifacts migrate into an auto-created default workspace ("General", id `default`) on startup (idempotent).
+- `GET /api/workspaces` (members, with `artifactCount`), `POST /api/workspaces` and `PATCH /api/workspaces/:id` (editors),
+  `DELETE /api/workspaces/:id` (owner). Deleting is refused with 409 while the workspace holds artifacts, and always for the default one.
+- `GET /api/artifacts?workspace=<id or name>` filters; `POST /api/artifacts` and `/api/artifacts/import?workspace=` place a new artifact;
+  `PATCH /api/artifacts/:id {workspaceId}` moves one.
+- UI: workspace switcher in the header pill, filter and edit/delete on **Artifacts**, "Move to workspace" in each row's menu and the viewer's title menu.
+- Extension point: `workspaces.settings` is a JSON column, all logic is in `server/utils/workspaces.ts` (`getSettings`/`patchSettings`).
+  Per-workspace design tokens and a component library are meant to hang off it (or off tables keyed by `workspace_id`); neither exists yet.
+- Test: `node tests/workspaces-test.mjs` against `PORT=3111 npm run dev:login`.
 
 ## Admin (owner)
 Under **Admin**: Overview (MCP endpoint, storage), Members (invite, roles, remove), Clients (every OAuth grant with its member, scopes,
