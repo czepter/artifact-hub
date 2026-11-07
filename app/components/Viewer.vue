@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X, ArrowLeft, Check, ChevronDown, Copy, Download, MessageSquare, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2 } from '@lucide/vue'
+import { X, ArrowLeft, Check, ChevronDown, Copy, Download, ImageIcon, MessageSquare, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -634,6 +634,9 @@ function exportZip() {
   const v = pinnedVersion.value ? `?v=${pinnedVersion.value}` : ''
   window.location.href = `/api/artifacts/${data.value!.artifact.id}/export${v}`
 }
+// ---- image export (owner): the dialog lives in RenderDialog.vue ---------------------------------
+const renderOpen = ref(false)
+function openRender() { menuOpen.value = false; renderOpen.value = true }
 async function refresh() { menuOpen.value = false; await load() }
 const deleteOpen = ref(false)
 function askRemove() { menuOpen.value = false; deleteOpen.value = true }
@@ -730,6 +733,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
           <DropdownMenuContent align="start" class="w-64">
             <DropdownMenuLabel class="text-xs font-normal text-muted-foreground">Owned by you<br>Updated {{ ago(data.artifact.updatedAt) }} · v{{ data.artifact.live }}</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem @select="openRender"><ImageIcon />Export as image…</DropdownMenuItem>
             <DropdownMenuItem @select="exportZip"><Download />Export as .zip</DropdownMenuItem>
             <DropdownMenuItem @select="duplicate"><Copy />Duplicate</DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -921,6 +925,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
     </aside>
   </div>
 
+  <RenderDialog v-if="data && renderOpen" v-model:open="renderOpen" :artifact-id="data.artifact.id" :version="data.artifact.version" :boards="Object.entries(data.canvas?.boards ?? {}).map(([path, b]: [string, any]) => ({ path, title: b?.title || path }))" />
   <AlertDialog v-if="data" v-model:open="deleteOpen">
     <AlertDialogContent>
       <AlertDialogHeader>

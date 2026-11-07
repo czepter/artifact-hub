@@ -5,6 +5,7 @@ import {
   addComment, createShare, editFile, getArtifact, listArtifacts, listComments, listFiles, listVersions,
   publish, readFile, requireArtifact, resolveComment,
 } from './store'
+import { registerRenderTool } from './render/tool'
 
 const GUIDE = `# Artifact Hub: how to publish
 
@@ -53,6 +54,9 @@ Optional canvas fields (all validated; omit them for the defaults):
 - arrow \`bind\`: {"start":{"type":"note","id":"n1"},"end":{"type":"board","id":"screens/Home.html"}} attaches an end to a note or board; the viewer draws the end at the target's edge and follows it when it moves. Only arrows can be bound, to boards, rect, oval, sticky and text; targets must exist. A rect or oval may carry \`text\` (shown centred).
 Limits: 1000 notes, 400 pen points per stroke, boards and notes at most 8000 px wide or high, 200 operations per edit.
 
+## Looking at your work
+render_artifact draws the live version (or \`version\`) as png/webp/jpeg (returned as an image), svg (vector, from canvas.json) or xml (structured scene). \`board\` renders one board. Use it after publishing to check layout; boards show as text outlines when the server has no headless browser (the \`boards\` field says which).
+
 ## Visual editor
 The owner can edit boards in the viewer (select, retype text, change styles, add elements). Saved edits add \`data-hub-id\` attributes to elements: they are editor bookkeeping, keep them when you rewrite a file (the editor re-adds missing ones).
 
@@ -71,7 +75,7 @@ const fileSchema = z.object({
 })
 
 const TOOL_SCOPE: Record<string, string> = {
-  guide: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', data_list: 'read', data_get: 'read',
+  guide: 'read', render_artifact: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', data_list: 'read', data_get: 'read',
   reply_comment: 'comment', resolve_comment: 'comment',
   create_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
   share_link: 'share',
@@ -204,6 +208,8 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     const token = createShare(id, role)
     return text({ url: `${origin}/s/${token}`, role })
   })
+
+  registerRenderTool(server)
 
   return server
 }
