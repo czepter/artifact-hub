@@ -1,0 +1,71 @@
+name: CI
+
+# Pull requests are the only place tests run: code that lands on main was
+# already tested in its PR, so a push to main only warms the caches (below).
+on:
+  pull_request:
+    paths-ignore: ['**.md', '.impeccable/**', '.claude/**', 'LICENSE']
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', '.impeccable/**', '.claude/**', 'LICENSE']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Main only: seed the npm and build caches so PRs (which can read the default
+  # branch's caches but not each other's) start warm. No tests: already run in the PR.
+  warm:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - uses: actions/cache@v6
+        with:
+          path: node_modules/.cache
+          key: build-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: build-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+      - run: npm run build
+
+  unit:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24, cache: npm } # node:sqlite is a built-in
+      - run: npm ci --ignore-scripts # unit tests need no nuxt prepare
+      - name: Unit tests (canvas ops, geometry, html edit)
+        run: npx --yes tsx@4 tests/e2e/canvas-unit.ts
+
+  build:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      # Vite/Nitro/Nuxt caches; restore-keys falls back to the newest cache for this lockfile.
+      - uses: actions/cache@v6
+        with:
+          path: node_modules/.cache
+          key: build-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: build-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+      - run: npm run build
+      - name: Production build refuses dev-login env
+        run: |
+          set +e
+          NUXT_DEV_TOKEN=x HUB_DB=$RUNNER_TEMP/guard.sqlite timeout 20 node .output/server/index.mjs
+          test $? -ne 0
