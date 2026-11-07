@@ -4,6 +4,7 @@ import { boardKey, deleteOps, itemsFromCanvas, lockOps, noteKey } from '#shared/
 import { Lock, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceBetween, Play, Plus, Trash2, Pencil } from '@lucide/vue'
 import { ButtonGroup } from '@/components/ui/button-group'
 import type { AlignMode } from '#shared/canvasGeometry'
+import { themeInk } from '~/utils/canvasView'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -42,6 +43,7 @@ const FILLS = ['yellow', 'gray', 'red', 'orange', 'green', 'teal', 'blue', 'purp
 const num = (e: Event) => Number((e.target as HTMLInputElement).value)
 function patchBoard(patch: Record<string, unknown>) { if (one.value) emitOp({ type: 'updateBoard', path: one.value.id, patch } as CanvasOp) }
 function patchNote(patch: Record<string, unknown>) { if (one.value) emitOp({ type: 'updateNote', id: one.value.id, patch } as CanvasOp) }
+const ink = themeInk()
 const confirmDelete = ref(false)
 const confirmDeleteMany = ref(false)
 function removeBoard() {
@@ -106,8 +108,8 @@ function addBoard() {
         <div v-if="kind === 'text'" class="grid gap-1.5">
           <Label>Text colour</Label>
           <div class="flex gap-1.5">
-            <Input type="color" class="size-8 shrink-0 cursor-pointer p-0.5" :model-value="note.color ?? '#1c1b19'" @change="patchNote({ color: ($event.target as HTMLInputElement).value })" />
-            <Input class="h-8" :model-value="note.color ?? '#1c1b19'" @change="patchNote({ color: ($event.target as HTMLInputElement).value })" />
+            <Input type="color" class="size-8 shrink-0 cursor-pointer p-0.5" :model-value="note.color ?? ink" @change="patchNote({ color: ($event.target as HTMLInputElement).value })" />
+            <Input class="h-8" :model-value="note.color ?? ink" @change="patchNote({ color: ($event.target as HTMLInputElement).value })" />
           </div>
         </div>
         <div v-if="kind === 'text'" class="grid grid-cols-2 items-end gap-2">

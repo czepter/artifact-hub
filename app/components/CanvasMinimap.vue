@@ -17,14 +17,14 @@ const rect = (b: Box) => ({ x: b.x * s.value + ox.value, y: b.y * s.value + oy.v
 
 function jump(e: MouseEvent) {
   if (e.detail === 0) { emit('jump', bounds.value.x + bounds.value.w / 2, bounds.value.y + bounds.value.h / 2); return } // from the keyboard: go to the middle of everything
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const r = (e.currentTarget as HTMLElement).querySelector('svg')!.getBoundingClientRect()
   emit('jump', ((e.clientX - r.left) * (W / r.width) - ox.value) / s.value, ((e.clientY - r.top) * (H / r.height) - oy.value) / s.value)
 }
 </script>
 
 <template>
   <Button variant="outline" class="minimap h-auto rounded-lg bg-card p-0 shadow-md" data-ui data-minimap aria-label="Minimap: click to jump to a place on the canvas" title="Minimap" @click.stop="jump" @pointerdown.stop>
-    <svg :width="W" :height="H" :viewBox="`0 0 ${W} ${H}`" aria-hidden="true">
+    <svg :width="W" :height="H" :viewBox="`0 0 ${W} ${H}`" :style="{ width: W + 'px', height: H + 'px' }" aria-hidden="true">
       <rect v-for="(it, i) in items" :key="i" v-bind="rect(it.box)" :class="it.board ? 'board' : 'note'" rx="1" />
       <rect v-bind="rect(win)" class="win" rx="1" />
     </svg>
