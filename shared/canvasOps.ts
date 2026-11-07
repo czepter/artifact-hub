@@ -5,8 +5,22 @@ export type NoteKind = 'sticky' | 'text' | 'rect' | 'oval' | 'line' | 'arrow' | 
 export const NOTE_KINDS: NoteKind[] = ['sticky', 'text', 'rect', 'oval', 'line', 'arrow', 'pen']
 export const FILLS = ['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'none']
 
-export interface BoardPatch { x?: number, y?: number, w?: number, h?: number, title?: string, is_interactive?: boolean, expand?: string | null, tweaks?: Record<string, unknown> | null }
-export interface NoteInput { kind?: NoteKind, x?: number, y?: number, w?: number, h?: number, text?: string, fill?: string, color?: string, size?: string, bold?: boolean, points?: number[][] }
+export const STROKE_STYLES = ['solid', 'dashed', 'dotted'] as const
+export const FILL_STYLES = ['solid', 'hatch', 'cross'] as const
+export const ROUNDNESS = ['sharp', 'round'] as const
+export const ARROWHEADS = ['none', 'arrow', 'triangle', 'dot', 'bar'] as const
+export type BindTarget = { type: 'board' | 'note', id: string }
+export type Bind = { start?: BindTarget | null, end?: BindTarget | null }
+
+export interface BoardPatch { x?: number, y?: number, w?: number, h?: number, title?: string, is_interactive?: boolean, expand?: string | null, tweaks?: Record<string, unknown> | null, locked?: boolean | null, group?: string | null }
+/** Fields that are `null` in a patch are cleared (removed from the stored note). */
+export interface NoteInput {
+  kind?: NoteKind, x?: number, y?: number, w?: number, h?: number, text?: string, fill?: string, color?: string, size?: string, bold?: boolean, points?: number[][]
+  locked?: boolean | null, group?: string | null, stroke?: string | null, strokeWidth?: number | null, strokeStyle?: (typeof STROKE_STYLES)[number] | null
+  fillStyle?: (typeof FILL_STYLES)[number] | null, roundness?: (typeof ROUNDNESS)[number] | null
+  arrowStart?: (typeof ARROWHEADS)[number] | null, arrowEnd?: (typeof ARROWHEADS)[number] | null, bind?: Bind | null
+}
+export type ReorderMode = 'front' | 'back' | 'forward' | 'backward'
 
 export type CanvasOp =
   | { type: 'addBoard', path?: string, title?: string, x: number, y: number, w: number, h: number }
@@ -15,12 +29,17 @@ export type CanvasOp =
   | { type: 'addNote', id: string, note: NoteInput }
   | { type: 'updateNote', id: string, patch: NoteInput }
   | { type: 'deleteNote', id: string }
+  | { type: 'reorderNotes', ids: string[], mode: ReorderMode }
+  /** Copies a board (its entry and its HTML file). `x`/`y` default to a 40px offset from the original. */
+  | { type: 'duplicateBoard', path: string, title?: string, x?: number, y?: number }
 
 export interface Canvas {
   v?: number, title?: string, launch?: unknown, pages?: unknown[], designSystems?: unknown[]
   boards: Record<string, Record<string, unknown>>
   order: string[]
   notes: Record<string, Record<string, unknown>>
+  /** Back-to-front z-order of notes. Missing, or missing ids, fall back to the notes' key order. */
+  noteOrder?: string[]
   [k: string]: unknown
 }
 
@@ -56,7 +75,41 @@ function cleanNote(n: NoteInput, base: Record<string, unknown> = {}): Record<str
     if (!Array.isArray(n.points) || n.points.length > 400 || !n.points.every(p => Array.isArray(p) && p.length === 2 && p.every(v => typeof v === 'number' && Number.isFinite(v)))) throw new CanvasError(400, 'Invalid points')
     out.points = n.points.map(p => [Math.round(p[0]! * 10) / 10, Math.round(p[1]! * 10) / 10])
   }
+  cleanStyle(n, out)
   return out
+}
+
+const HEX = /^#[0-9a-f]{6}$/i
+const oneOf = <T extends string>(v: unknown, list: readonly T[], name: string): T => {
+  if (typeof v !== 'string' || !list.includes(v as T)) throw new CanvasError(400, `Invalid ${name}`)
+  return v as T
+}
+/** Validates the optional style / structure fields shared by notes. `null` clears a field. */
+function cleanStyle(n: NoteInput, out: Record<string, unknown>) {
+  const set = (k: string, v: unknown, ok: () => unknown) => { if (v === null) delete out[k]; else if (v !== undefined) out[k] = ok() }
+  set('locked', n.locked, () => !!n.locked)
+  set('group', n.group, () => { if (typeof n.group !== 'string' || !ID.test(n.group)) throw new CanvasError(400, 'Invalid group'); return n.group })
+  set('stroke', n.stroke, () => { if (typeof n.stroke !== 'string' || !HEX.test(n.stroke)) throw new CanvasError(400, 'Invalid stroke colour'); return n.stroke })
+  set('strokeWidth', n.strokeWidth, () => clamp(n.strokeWidth, 1, 24, 'strokeWidth'))
+  set('strokeStyle', n.strokeStyle, () => oneOf(n.strokeStyle, STROKE_STYLES, 'strokeStyle'))
+  set('fillStyle', n.fillStyle, () => oneOf(n.fillStyle, FILL_STYLES, 'fillStyle'))
+  set('roundness', n.roundness, () => oneOf(n.roundness, ROUNDNESS, 'roundness'))
+  set('arrowStart', n.arrowStart, () => oneOf(n.arrowStart, ARROWHEADS, 'arrowStart'))
+  set('arrowEnd', n.arrowEnd, () => oneOf(n.arrowEnd, ARROWHEADS, 'arrowEnd'))
+  if (n.bind !== undefined) {
+    if (n.bind === null) delete out.bind
+    else {
+      if (typeof n.bind !== 'object' || Array.isArray(n.bind)) throw new CanvasError(400, 'Invalid bind')
+      const b: Bind = {}
+      for (const end of ['start', 'end'] as const) {
+        const t = n.bind[end]
+        if (t === undefined || t === null) continue
+        if (typeof t !== 'object' || (t.type !== 'board' && t.type !== 'note') || typeof t.id !== 'string' || t.id.length > 100) throw new CanvasError(400, 'Invalid bind target')
+        b[end] = { type: t.type, id: t.id }
+      }
+      if (b.start || b.end) out.bind = b; else delete out.bind
+    }
+  }
 }
 
 export const BLANK_BOARD = (title: string) => `<!doctype html>
@@ -66,7 +119,56 @@ export const BLANK_BOARD = (title: string) => `<!doctype html>
 </html>
 `
 
-export interface CanvasResult { canvas: Canvas, addFiles: { path: string, content: string }[], removePaths: string[] }
+export interface CanvasResult {
+  canvas: Canvas, addFiles: { path: string, content: string }[], removePaths: string[]
+  /** Board files to copy byte for byte from the current version (`from`) to a new path (`to`). */
+  copyFiles: { from: string, to: string }[]
+}
+
+/** Z-order, back to front: `noteOrder` first (ids that still exist), then any notes it does not mention, in key order. */
+export function orderedNoteIds(c: Pick<Canvas, 'notes' | 'noteOrder'>): string[] {
+  const seen = new Set<string>(), out: string[] = []
+  for (const id of Array.isArray(c.noteOrder) ? c.noteOrder : []) if (c.notes?.[id] && !seen.has(id)) { seen.add(id); out.push(id) }
+  for (const id of Object.keys(c.notes ?? {})) if (!seen.has(id)) out.push(id)
+  return out
+}
+
+/** Moves `ids` in a back-to-front list. Relative order of the moved ids is kept. */
+export function reorder(list: string[], ids: string[], mode: ReorderMode): string[] {
+  const pick = new Set(ids)
+  const moved = list.filter(i => pick.has(i))
+  if (!moved.length) return list.slice()
+  if (mode === 'front') return [...list.filter(i => !pick.has(i)), ...moved]
+  if (mode === 'back') return [...moved, ...list.filter(i => !pick.has(i))]
+  const out = list.slice()
+  if (mode === 'forward') {
+    for (let i = out.length - 2; i >= 0; i--) if (pick.has(out[i]!) && !pick.has(out[i + 1]!)) [out[i], out[i + 1]] = [out[i + 1]!, out[i]!]
+  } else {
+    for (let i = 1; i < out.length; i++) if (pick.has(out[i]!) && !pick.has(out[i - 1]!)) [out[i], out[i - 1]] = [out[i - 1]!, out[i]!]
+  }
+  return out
+}
+
+function checkBind(canvas: Canvas, selfId: string | null, note: Record<string, unknown>) {
+  const b = note.bind as Bind | undefined
+  if (!b) return
+  for (const end of ['start', 'end'] as const) {
+    const t = b[end]
+    if (!t) continue
+    const exists = t.type === 'board' ? !!canvas.boards[t.id] : !!canvas.notes[t.id]
+    if (!exists || (t.type === 'note' && t.id === selfId)) throw new CanvasError(400, `Cannot bind to ${t.type} ${t.id}`)
+  }
+}
+
+/** A deleted board or note must not stay referenced by arrows bound to it. */
+function clearBindsTo(canvas: Canvas, target: BindTarget) {
+  for (const n of Object.values(canvas.notes)) {
+    const b = n.bind as Bind | undefined
+    if (!b) continue
+    for (const end of ['start', 'end'] as const) if (b[end]?.type === target.type && b[end]?.id === target.id) delete b[end]
+    if (!b.start && !b.end) delete n.bind
+  }
+}
 
 /**
  * Applies operations to a canvas. `files` lists the artifact's current paths (to avoid overwriting when a new
@@ -80,6 +182,7 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
   const taken = new Set(files)
   const addFiles: { path: string, content: string }[] = []
   const removePaths: string[] = []
+  const copyFiles: { from: string, to: string }[] = []
 
   for (const op of ops) {
     switch (op.type) {
@@ -112,6 +215,8 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         for (const k of ['w', 'h'] as const) if (p[k] !== undefined) b[k] = clamp(p[k], 40, 8000, k)
         if (p.title !== undefined) { if (typeof p.title !== 'string' || p.title.length > 80) throw new CanvasError(400, 'Invalid title'); b.title = p.title }
         if (p.is_interactive !== undefined) b.is_interactive = !!p.is_interactive
+        if (p.locked !== undefined) { if (p.locked === null || p.locked === false) delete b.locked; else b.locked = true }
+        if (p.group !== undefined) { if (p.group === null) delete b.group; else if (typeof p.group !== 'string' || !ID.test(p.group)) throw new CanvasError(400, 'Invalid group'); else b.group = p.group }
         if (p.expand !== undefined) { if (p.expand === null || p.expand === '') delete b.expand; else if (p.expand === 'fill') b.expand = 'fill'; else throw new CanvasError(400, 'Invalid expand') }
         if (p.tweaks !== undefined) {
           if (p.tweaks === null) delete b.tweaks
@@ -125,28 +230,90 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         delete canvas.boards[op.path]
         canvas.order = canvas.order.filter(x => x !== op.path)
         removePaths.push(op.path)
+        clearBindsTo(canvas, { type: 'board', id: op.path })
         break
       }
       case 'addNote': {
         if (typeof op.id !== 'string' || !ID.test(op.id) || canvas.notes[op.id]) throw new CanvasError(400, 'Invalid or duplicate note id')
         if (Object.keys(canvas.notes).length >= 1000) throw new CanvasError(413, 'Too many notes')
-        canvas.notes[op.id] = cleanNote(op.note ?? {})
+        const clean = cleanNote(op.note ?? {})
+        checkBind(canvas, op.id, clean)
+        canvas.notes[op.id] = clean
+        if (Array.isArray(canvas.noteOrder)) canvas.noteOrder = [...orderedNoteIds(canvas).filter(i => i !== op.id), op.id]
         break
       }
       case 'updateNote': {
         const n = canvas.notes[op.id]
         if (!n) throw new CanvasError(404, `No such note: ${op.id}`)
-        canvas.notes[op.id] = cleanNote(op.patch ?? {}, n)
+        const clean = cleanNote(op.patch ?? {}, n)
+        checkBind(canvas, op.id, clean)
+        canvas.notes[op.id] = clean
         break
       }
       case 'deleteNote': {
         if (!canvas.notes[op.id]) throw new CanvasError(404, `No such note: ${op.id}`)
         delete canvas.notes[op.id]
+        if (Array.isArray(canvas.noteOrder)) canvas.noteOrder = canvas.noteOrder.filter(i => i !== op.id)
+        clearBindsTo(canvas, { type: 'note', id: op.id })
+        break
+      }
+      case 'reorderNotes': {
+        if (!Array.isArray(op.ids) || !op.ids.length || op.ids.length > 1000 || !op.ids.every(i => typeof i === 'string')) throw new CanvasError(400, 'Invalid note ids')
+        if (!['front', 'back', 'forward', 'backward'].includes(op.mode)) throw new CanvasError(400, 'Invalid reorder mode')
+        for (const id of op.ids) if (!canvas.notes[id]) throw new CanvasError(404, `No such note: ${id}`)
+        canvas.noteOrder = reorder(orderedNoteIds(canvas), op.ids, op.mode)
+        break
+      }
+      case 'duplicateBoard': {
+        const src = canvas.boards[op.path]
+        if (!src) throw new CanvasError(404, `No such board: ${op.path}`)
+        const dot = op.path.lastIndexOf('.'), slash = op.path.lastIndexOf('/')
+        const stem = op.path.slice(0, dot).replace(/-copy(-\d+)?$/, ''), ext = op.path.slice(dot)
+        let path = '', n = 1
+        do { path = `${stem}-copy${n > 1 ? '-' + n : ''}${ext}`; n++ } while (taken.has(path) || canvas.boards[path])
+        if (!BOARD_PATH.test(path) || slash > dot) throw new CanvasError(400, 'Cannot name the copy')
+        const title = (op.title ?? `${src.title ?? op.path} copy`).toString().slice(0, 80)
+        const copy: Record<string, unknown> = JSON.parse(JSON.stringify(src))
+        delete copy.group; delete copy.locked
+        Object.assign(copy, { title, x: clamp(op.x ?? (+(src.x as number) || 0) + 40, -100000, 100000, 'x'), y: clamp(op.y ?? (+(src.y as number) || 0) + 40, -100000, 100000, 'y') })
+        canvas.boards[path] = copy
+        canvas.order.push(path)
+        taken.add(path)
+        copyFiles.push({ from: op.path, to: path })
         break
       }
       default:
         throw new CanvasError(400, `Unknown operation: ${(op as { type: string }).type}`)
     }
   }
-  return { canvas, addFiles, removePaths }
+  return { canvas, addFiles, removePaths, copyFiles }
+}
+
+const SAME_TARGET = (a: CanvasOp, b: CanvasOp) =>
+  (a.type === 'updateNote' && b.type === 'updateNote' && a.id === b.id) || (a.type === 'updateBoard' && b.type === 'updateBoard' && a.path === b.path)
+
+/**
+ * Appends `incoming` to `pending`, folding an update into an earlier update of the same note or board when only
+ * other updates lie between them (so the result is identical when replayed). Holding an arrow key or dragging
+ * therefore never piles up towards the 200-operation limit.
+ */
+export function mergeOps(pending: CanvasOp[], incoming: CanvasOp[]): CanvasOp[] {
+  const out = pending.slice()
+  for (const op of incoming) {
+    let merged = false
+    if (op.type === 'updateNote' || op.type === 'updateBoard') {
+      for (let i = out.length - 1; i >= 0; i--) {
+        const prev = out[i]!
+        if (SAME_TARGET(prev, op)) {
+          const p = prev as Extract<CanvasOp, { type: 'updateNote' | 'updateBoard' }>
+          out[i] = { ...p, patch: { ...p.patch, ...(op as typeof p).patch } } as CanvasOp
+          merged = true
+          break
+        }
+        if (prev.type !== 'updateNote' && prev.type !== 'updateBoard') break
+      }
+    }
+    if (!merged) out.push(op)
+  }
+  return out
 }

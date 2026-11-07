@@ -1,7 +1,9 @@
-import { applyCanvasOps, CanvasError, emptyCanvas } from '/home/christian/.t3/scratch/2026-11-06-is-there-an-opensource-alternative-39b4b457/artifact-hub/shared/canvasOps'
-import { applyEdits, getElementSource, EditError, ensureIds } from '/home/christian/.t3/scratch/2026-11-06-is-there-an-opensource-alternative-39b4b457/artifact-hub/server/utils/htmlEdit'
+import { applyCanvasOps, CanvasError, emptyCanvas, mergeOps, orderedNoteIds, reorder, type CanvasOp } from '../../shared/canvasOps'
+import { itemBox, noteBox, scaleItems, moveEndpoint, unionBox, type GeomItem } from '../../shared/canvasGeometry'
+import { applyEdits, getElementSource, EditError, ensureIds } from '../../server/utils/htmlEdit'
 let fails = 0
 const ok = (n: string, c: any, x: any = '') => { console.log(c ? 'PASS' : 'FAIL', n, c ? '' : JSON.stringify(x).slice(0, 300)); if (!c) fails++ }
+const same = (a: any, b: any) => { const n = (v: any): any => Array.isArray(v) ? v.map(n) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, n(v[k])])) : v; return JSON.stringify(n(a)) === JSON.stringify(n(b)) }
 const throws = (n: string, f: () => any, status?: number) => { try { f(); ok(n, false, 'did not throw') } catch (e: any) { ok(n, (e instanceof CanvasError || e instanceof EditError) && (!status || e.status === status), e.message) } }
 
 // --- boards
@@ -42,6 +44,127 @@ throws('note with a bad id rejected', () => applyCanvasOps(null, [], [{ type: 'a
 throws('duplicate note id rejected', () => applyCanvasOps(r.canvas, [], [{ type: 'addNote', id: 's1', note: {} }]), 400)
 throws('oversized pen path rejected', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'p', note: { kind: 'pen', points: Array.from({ length: 500 }, () => [0, 0]) } }]), 400)
 throws('note text over 2000 chars rejected', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 't', note: { text: 'x'.repeat(2001) } }]), 400)
+
+// --- Phase 0: schema additions
+const styled = applyCanvasOps(null, [], [{ type: 'addNote', id: 'st', note: { kind: 'arrow', x: 0, y: 0, w: 50, h: 0, locked: true, group: 'g1', stroke: '#ff0000', strokeWidth: 4, strokeStyle: 'dashed', fillStyle: 'hatch', roundness: 'round', arrowStart: 'dot', arrowEnd: 'triangle' } }]).canvas.notes.st
+ok('style fields are stored', styled.locked === true && styled.group === 'g1' && styled.stroke === '#ff0000' && styled.strokeWidth === 4 && styled.strokeStyle === 'dashed' && styled.fillStyle === 'hatch' && styled.roundness === 'round' && styled.arrowStart === 'dot' && styled.arrowEnd === 'triangle', styled)
+const cleared = applyCanvasOps(applyCanvasOps(null, [], [{ type: 'addNote', id: 'a', note: { kind: 'rect', locked: true, group: 'g', stroke: '#000000' } }]).canvas, [], [{ type: 'updateNote', id: 'a', patch: { locked: null, group: null, stroke: null } }]).canvas.notes.a
+ok('null clears style fields', !('locked' in cleared) && !('group' in cleared) && !('stroke' in cleared), cleared)
+for (const [name, note] of [['strokeStyle', { strokeStyle: 'wavy' }], ['fillStyle', { fillStyle: 'rough' }], ['roundness', { roundness: 'x' }], ['arrowEnd', { arrowEnd: 'spear' }], ['arrowStart', { arrowStart: 1 }], ['stroke (CSS injection)', { stroke: 'red;x:y' }], ['strokeWidth NaN', { strokeWidth: NaN }], ['group with spaces', { group: 'a b' }], ['bind shape', { bind: 'x' }], ['bind target type', { bind: { start: { type: 'script', id: 'x' } } }]] as const)
+  throws(`invalid ${name} rejected`, () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: note as any }]), 400)
+ok('strokeWidth is clamped to 1..24', applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { strokeWidth: 99 } }]).canvas.notes.x.strokeWidth === 24)
+throws('bind to a missing note rejected', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { kind: 'arrow', bind: { end: { type: 'note', id: 'nope' } } } }]), 400)
+throws('bind to itself rejected', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { kind: 'arrow' } }, { type: 'updateNote', id: 'x', patch: { bind: { end: { type: 'note', id: 'x' } } } }]), 400)
+let bc = applyCanvasOps(null, ['index.html'], [{ type: 'addBoard', title: 'B', x: 0, y: 0, w: 100, h: 100 }, { type: 'addNote', id: 't', note: { kind: 'rect', w: 50, h: 50 } }, { type: 'addNote', id: 'ar', note: { kind: 'arrow', w: 80, h: 0, bind: { start: { type: 'note', id: 't' }, end: { type: 'board', id: 'b.html' } } } }]).canvas
+ok('arrows can bind to notes and boards', JSON.stringify(bc.notes.ar.bind) === '{"start":{"type":"note","id":"t"},"end":{"type":"board","id":"b.html"}}', bc.notes.ar)
+let bc2 = applyCanvasOps(bc, [], [{ type: 'deleteNote', id: 't' }]).canvas
+ok('deleting a bound note clears the binding in the same batch', JSON.stringify(bc2.notes.ar.bind) === '{"end":{"type":"board","id":"b.html"}}', bc2.notes.ar)
+bc2 = applyCanvasOps(bc2, [], [{ type: 'removeBoard', path: 'b.html' }]).canvas
+ok('removing a bound board drops the whole bind object', !('bind' in bc2.notes.ar), bc2.notes.ar)
+let bl = applyCanvasOps(null, [], [{ type: 'addBoard', path: 'p.html', x: 0, y: 0, w: 100, h: 100 }, { type: 'updateBoard', path: 'p.html', patch: { locked: true, group: 'g9' } }]).canvas.boards['p.html']
+ok('boards take locked and group', bl.locked === true && bl.group === 'g9', bl)
+bl = applyCanvasOps({ ...emptyCanvas(), boards: { 'p.html': bl }, order: ['p.html'] }, [], [{ type: 'updateBoard', path: 'p.html', patch: { locked: false, group: null } }]).canvas.boards['p.html']
+ok('board locked/group can be cleared', !('locked' in bl) && !('group' in bl), bl)
+throws('board group with spaces rejected', () => applyCanvasOps({ ...emptyCanvas(), boards: { 'p.html': {} }, order: ['p.html'] }, [], [{ type: 'updateBoard', path: 'p.html', patch: { group: 'a b' } }]), 400)
+
+// z-order
+const zc = applyCanvasOps(null, [], ['a', 'b', 'c', 'd'].map(id => ({ type: 'addNote' as const, id, note: { kind: 'rect' as const, w: 10, h: 10 } }))).canvas
+ok('without noteOrder, z-order is key order (old canvases render unchanged)', orderedNoteIds(zc).join() === 'a,b,c,d' && !('noteOrder' in zc))
+ok('reorder front/back/forward/backward', reorder(['a', 'b', 'c', 'd'], ['b'], 'front').join() === 'a,c,d,b' && reorder(['a', 'b', 'c', 'd'], ['c'], 'back').join() === 'c,a,b,d' && reorder(['a', 'b', 'c', 'd'], ['b'], 'forward').join() === 'a,c,b,d' && reorder(['a', 'b', 'c', 'd'], ['c'], 'backward').join() === 'a,c,b,d')
+ok('reorder keeps the relative order of several ids and stops at the ends', reorder(['a', 'b', 'c', 'd'], ['a', 'c'], 'forward').join() === 'b,a,d,c' && reorder(['a', 'b', 'c'], ['c'], 'forward').join() === 'a,b,c' && reorder(['a', 'b', 'c'], ['a'], 'backward').join() === 'a,b,c')
+let zr = applyCanvasOps(zc, [], [{ type: 'reorderNotes', ids: ['a', 'b'], mode: 'front' }]).canvas
+ok('reorderNotes creates noteOrder', zr.noteOrder!.join() === 'c,d,a,b', zr.noteOrder)
+zr = applyCanvasOps(zr, [], [{ type: 'addNote', id: 'e', note: {} }, { type: 'deleteNote', id: 'c' }]).canvas
+ok('addNote appends on top and deleteNote leaves noteOrder, once it exists', zr.noteOrder!.join() === 'd,a,b,e', zr.noteOrder)
+ok('stale ids in noteOrder are ignored and unlisted notes fall back to key order', orderedNoteIds({ notes: { a: {}, b: {}, c: {} }, noteOrder: ['zz', 'c'] }).join() === 'c,a,b')
+throws('reorderNotes with an unknown note -> 404', () => applyCanvasOps(zc, [], [{ type: 'reorderNotes', ids: ['nope'], mode: 'front' }]), 404)
+throws('reorderNotes with a bad mode -> 400', () => applyCanvasOps(zc, [], [{ type: 'reorderNotes', ids: ['a'], mode: 'sideways' as any }]), 400)
+throws('reorderNotes with no ids -> 400', () => applyCanvasOps(zc, [], [{ type: 'reorderNotes', ids: [], mode: 'front' }]), 400)
+
+// duplicateBoard
+let dc = applyCanvasOps(null, ['index.html'], [{ type: 'addBoard', path: 'screens/Home.html', title: 'Home', x: 0, y: 0, w: 300, h: 200 }]).canvas
+dc.boards['screens/Home.html'].tweaks = { accent: '#ff0000' }
+let dr = applyCanvasOps(dc, ['index.html', 'screens/Home.html'], [{ type: 'duplicateBoard', path: 'screens/Home.html' }, { type: 'duplicateBoard', path: 'screens/Home.html', x: 5, y: 6, title: 'Second' }])
+ok('duplicateBoard copies the entry, offsets it and asks for a file copy', dr.copyFiles.length === 2 && dr.copyFiles[0]!.from === 'screens/Home.html' && dr.copyFiles[0]!.to === 'screens/Home-copy.html' && dr.canvas.boards['screens/Home-copy.html'].x === 40 && dr.canvas.boards['screens/Home-copy.html'].title === 'Home copy' && JSON.stringify(dr.canvas.boards['screens/Home-copy.html'].tweaks) === '{"accent":"#ff0000"}', dr)
+ok('duplicateBoard: unique names, explicit position and title, order and no mutation', dr.copyFiles[1]!.to === 'screens/Home-copy-2.html' && dr.canvas.boards['screens/Home-copy-2.html'].x === 5 && dr.canvas.boards['screens/Home-copy-2.html'].title === 'Second' && dr.canvas.order.join() === 'index.html,screens/Home.html,screens/Home-copy.html,screens/Home-copy-2.html' && !dc.boards['screens/Home-copy.html'])
+throws('duplicateBoard of an unknown board -> 404', () => applyCanvasOps(dc, [], [{ type: 'duplicateBoard', path: 'nope.html' }]), 404)
+ok('duplicating a copy does not stack -copy-copy', applyCanvasOps(dr.canvas, ['screens/Home-copy.html'], [{ type: 'duplicateBoard', path: 'screens/Home-copy.html' }]).copyFiles[0]!.to === 'screens/Home-copy-3.html')
+ok('duplicateBoard drops locked and group on the copy', (() => { const c = JSON.parse(JSON.stringify(dc)); c.boards['screens/Home.html'].locked = true; c.boards['screens/Home.html'].group = 'g'; const b = applyCanvasOps(c, [], [{ type: 'duplicateBoard', path: 'screens/Home.html' }]).canvas.boards['screens/Home-copy.html']; return !b.locked && !b.group })())
+
+// limits stay
+throws('more than 200 operations rejected', () => applyCanvasOps(null, [], Array.from({ length: 201 }, (_, i) => ({ type: 'addNote' as const, id: 'n' + i, note: {} }))), 413)
+throws('more than 1000 notes rejected', () => { let c: any = null; for (let i = 0; i < 6; i++) c = applyCanvasOps(c, [], Array.from({ length: 200 }, (_, j) => ({ type: 'addNote' as const, id: `n${i}_${j}`, note: {} }))).canvas }, 413)
+
+// mergeOps: one gesture, bounded op count
+const nudged: CanvasOp[] = []
+let pend: CanvasOp[] = []
+for (let i = 1; i <= 150; i++) pend = mergeOps(pend, [{ type: 'updateNote', id: 'a', patch: { x: i } }, { type: 'updateNote', id: 'b', patch: { x: i, y: 2 } }, { type: 'updateBoard', path: 'p.html', patch: { x: i } }])
+ok('holding a key folds updates of the same target (3 ops, not 450)', pend.length === 3 && (pend[0] as any).patch.x === 150 && (pend[1] as any).patch.y === 2, pend)
+ok('mergeOps does not merge across structural ops', mergeOps([{ type: 'updateNote', id: 'a', patch: { x: 1 } }, { type: 'deleteNote', id: 'z' }], [{ type: 'updateNote', id: 'a', patch: { x: 2 } }]).length === 3)
+ok('mergeOps keeps different fields of one target', (() => { const m = mergeOps([{ type: 'updateNote', id: 'a', patch: { x: 1 } }], [{ type: 'updateNote', id: 'a', patch: { text: 'hi' } }]); return m.length === 1 && JSON.stringify((m[0] as any).patch) === '{"x":1,"text":"hi"}' })())
+ok('merged ops replay to the same canvas as the originals', (() => {
+  const base = applyCanvasOps(null, [], [{ type: 'addNote', id: 'a', note: { x: 0, y: 0, w: 50 } }, { type: 'addNote', id: 'b', note: { x: 5 } }]).canvas
+  const seq: CanvasOp[] = [{ type: 'updateNote', id: 'a', patch: { x: 1 } }, { type: 'updateNote', id: 'b', patch: { x: 9 } }, { type: 'updateNote', id: 'a', patch: { x: 2, y: 3 } }]
+  return JSON.stringify(applyCanvasOps(base, [], seq).canvas) === JSON.stringify(applyCanvasOps(base, [], mergeOps([], seq)).canvas)
+})())
+
+// --- geometry
+const it = (key: string, kind: string, x: number, y: number, w: number, h: number, extra: Partial<GeomItem> = {}): GeomItem => ({ key, kind, x, y, w, h, ...extra })
+ok('noteBox: line with negative extents', JSON.stringify(noteBox({ kind: 'line', x: 100, y: 100, w: -40, h: -10 })) === '{"x":60,"y":90,"w":40,"h":10}')
+ok('noteBox: pen box includes the origin and has a minimum size', JSON.stringify(noteBox({ kind: 'pen', x: 10, y: 10, w: 0, h: 0, points: [[0, 0], [20, 5]] })) === '{"x":10,"y":10,"w":20,"h":8}')
+ok('noteBox: sticky without height gets the default', noteBox({ kind: 'sticky', x: 0, y: 0, w: 240, h: 0 }).h === 120)
+ok('unionBox of two boxes', JSON.stringify(unionBox([{ x: 0, y: 0, w: 10, h: 10 }, { x: 20, y: -5, w: 10, h: 10 }])) === '{"x":0,"y":-5,"w":30,"h":15}' && unionBox([]) === null)
+// single item = one-item multi-resize
+let sc = scaleItems([it('b:a.html', 'board', 100, 100, 400, 200)], { x: 100, y: 100, w: 400, h: 200 }, 'se', { dx: 100, dy: 50 })
+ok('scaleItems: single board, se handle', same(sc.patches['b:a.html'], {"x":100,"y":100,"w":500,"h":250}), sc)
+sc = scaleItems([it('b:a.html', 'board', 100, 100, 400, 200)], { x: 100, y: 100, w: 400, h: 200 }, 'nw', { dx: 50, dy: 20 })
+ok('scaleItems: nw handle keeps the opposite corner', same(sc.patches['b:a.html'], {"x":150,"y":120,"w":350,"h":180}), sc)
+sc = scaleItems([it('b:a.html', 'board', 100, 100, 400, 200)], { x: 100, y: 100, w: 400, h: 200 }, 'e', { dx: 100, dy: 999 })
+ok('scaleItems: side handle stretches one axis only', same(sc.patches['b:a.html'], {"x":100,"y":100,"w":500,"h":200}), sc)
+sc = scaleItems([it('b:a.html', 'board', 100, 100, 400, 200)], { x: 100, y: 100, w: 400, h: 200 }, 'se', { dx: 100, dy: 0, keepAspect: true })
+ok('scaleItems: corner + keepAspect keeps the ratio', same(sc.patches['b:a.html'], {"x":100,"y":100,"w":500,"h":250}), sc)
+sc = scaleItems([it('b:a.html', 'board', 100, 100, 400, 200)], { x: 100, y: 100, w: 400, h: 200 }, 'e', { dx: 50, dy: 0, fromCenter: true })
+ok('scaleItems: Alt scales from the centre', same(sc.patches['b:a.html'], {"x":50,"y":100,"w":500,"h":200}), sc)
+// multi
+const multi = [it('b:a.html', 'board', 0, 0, 400, 200), it('n:r', 'rect', 400, 200, 100, 100), it('n:ar', 'arrow', 100, 300, -50, 100), it('n:p', 'pen', 200, 200, 0, 0, { points: [[0, 0], [100, 50]] }), it('n:s', 'sticky', 300, 0, 200, 100)]
+const mb = unionBox(multi.map(itemBox))!
+sc = scaleItems(multi, mb, 'se', { dx: mb.w, dy: mb.h })
+const P = sc.patches
+ok('scaleItems: two-fold scale doubles positions and sizes of every kind', sc.sx === 2 && sc.sy === 2 && P['b:a.html']!.w === 800 && P['b:a.html']!.h === 400 && P['n:r']!.x === 800 && P['n:r']!.w === 200 && P['n:r']!.h === 200, sc)
+ok('scaleItems: line keeps negative extents and scales both', P['n:ar']!.w === -100 && P['n:ar']!.h === 200 && P['n:ar']!.x === 200 && P['n:ar']!.y === 600, P['n:ar'])
+ok('scaleItems: pen scales origin and every point', P['n:p']!.x === 400 && P['n:p']!.y === 400 && JSON.stringify(P['n:p']!.points) === '[[0,0],[200,100]]', P['n:p'])
+ok('scaleItems: sticky scales x, y and w but not h', P['n:s']!.x === 600 && P['n:s']!.y === 0 && P['n:s']!.w === 400 && !('h' in P['n:s']!), P['n:s'])
+// clamping
+sc = scaleItems(multi, mb, 'se', { dx: -mb.w * 2, dy: -mb.h * 2 })
+const tiny = Object.entries(sc.patches).every(([k, p]) => (k === 'b:a.html' ? p.w! >= 40 : k === 'n:r' || k === 'n:s' ? p.w! >= 8 : true))
+ok('scaleItems: shrinking stops at the largest minimum (40 for boards) for the whole selection', tiny && sc.sx > 0 && Math.abs(sc.patches['b:a.html']!.w! - 40) <= 0.1, sc)
+ok('scaleItems: relative layout is kept at the clamp', Math.abs(sc.patches['n:r']!.x! / sc.sx - 400) < 1 && Math.abs(sc.patches['n:r']!.x! - 400 * sc.sx) < 1, sc.patches['n:r'])
+sc = scaleItems([it('n:r', 'rect', 0, 0, 100, 100), it('n:big', 'rect', 200, 0, 4000, 100)], { x: 0, y: 0, w: 4200, h: 100 }, 'e', { dx: 9999, dy: 0 })
+ok('scaleItems: growing stops where the largest item reaches 8000', sc.patches['n:big']!.w === 8000 && sc.sx < 2.01, sc)
+sc = scaleItems([it('n:a', 'rect', 0, 0, 100, 100), it('n:small', 'rect', 120, 0, 20, 100)], { x: 0, y: 0, w: 140, h: 100 }, 'e', { dx: -139, dy: 0 })
+ok('scaleItems: a small item stops the shrink at 8', sc.patches['n:small']!.w! >= 8 && sc.patches['n:small']!.w! < 8.2, sc)
+sc = scaleItems([it('n:a', 'rect', 0, 0, 100, 100), it('n:lk', 'rect', 200, 0, 100, 100, { locked: true })], { x: 0, y: 0, w: 300, h: 100 }, 'e', { dx: 300, dy: 0 })
+ok('scaleItems: locked items are skipped', !('n:lk' in sc.patches) && sc.patches['n:a']!.w === 200, sc)
+ok('scaleItems: all locked -> no patches', Object.keys(scaleItems([it('n:lk', 'rect', 0, 0, 100, 100, { locked: true })], { x: 0, y: 0, w: 100, h: 100 }, 'se', { dx: 50, dy: 50 }).patches).length === 0)
+sc = scaleItems([it('n:s', 'sticky', 0, 0, 200, 100)], { x: 0, y: 0, w: 200, h: 100 }, 's', { dx: 0, dy: 60 })
+ok('scaleItems: a lone sticky still resizes its height (same as before)', sc.patches['n:s']!.h === 160, sc)
+sc = scaleItems([it('n:p', 'pen', 0, 0, 0, 0, { points: [[0, 0], [10, 10]] }), it('n:q', 'rect', 100, 100, 50, 50)], { x: 0, y: 0, w: 150, h: 150 }, 'se', { dx: -10000, dy: -10000 })
+ok('scaleItems never collapses to zero (floor)', sc.sx >= 0.02 && sc.patches['n:q']!.w! >= 8, sc)
+// rounding drift on a 10x round trip
+{
+  let items = [it('n:r', 'rect', 13.3, 7.7, 101.3, 57.9), it('n:l', 'line', 5.5, 5.5, 33.3, -17.7)]
+  const start = JSON.parse(JSON.stringify(items))
+  for (let i = 0; i < 10; i++) {
+    for (const f of [2, 0.5]) {
+      const b = unionBox(items.map(itemBox))!
+      const r = scaleItems(items, b, 'se', { dx: b.w * (f - 1), dy: b.h * (f - 1) })
+      items = items.map(x => ({ ...x, ...r.patches[x.key]! }))
+    }
+  }
+  const drift = Math.max(...items.map((x, i) => Math.max(Math.abs(x.x - start[i].x), Math.abs(x.y - start[i].y), Math.abs(x.w - start[i].w), Math.abs(x.h - start[i].h))))
+  ok('scaleItems: 10x round trip drifts less than 2px (rounding at 0.1)', drift < 2, drift)
+}
+ok('moveEndpoint: end moves the extent, start keeps the end point', JSON.stringify(moveEndpoint({ x: 0, y: 0, w: 100, h: 50 }, 'end', 10, 10)) === '{"x":0,"y":0,"w":110,"h":60}' && JSON.stringify(moveEndpoint({ x: 0, y: 0, w: 100, h: 50 }, 'start', 10, 10)) === '{"x":10,"y":10,"w":90,"h":40}')
 
 // --- htmlEdit additions
 const page = '<body><div id="a"><p>one</p><img src="x.png"></div></body>'
