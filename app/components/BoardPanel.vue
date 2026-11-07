@@ -4,7 +4,7 @@ import { boardKey, deleteOps, itemsFromCanvas, lockOps, noteKey } from '#shared/
 import { Lock, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceBetween, Play, Plus, Trash2, Pencil } from '@lucide/vue'
 import { ButtonGroup } from '@/components/ui/button-group'
 import type { AlignMode } from '#shared/canvasGeometry'
-import { themeInk } from '~/utils/canvasView'
+import { useThemeInk } from '~/utils/canvasView'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -43,7 +43,7 @@ const FILLS = ['yellow', 'gray', 'red', 'orange', 'green', 'teal', 'blue', 'purp
 const num = (e: Event) => Number((e.target as HTMLInputElement).value)
 function patchBoard(patch: Record<string, unknown>) { if (one.value) emitOp({ type: 'updateBoard', path: one.value.id, patch } as CanvasOp) }
 function patchNote(patch: Record<string, unknown>) { if (one.value) emitOp({ type: 'updateNote', id: one.value.id, patch } as CanvasOp) }
-const ink = themeInk()
+const ink = useThemeInk()
 const confirmDelete = ref(false)
 const confirmDeleteMany = ref(false)
 function removeBoard() {

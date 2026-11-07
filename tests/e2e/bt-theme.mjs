@@ -24,6 +24,9 @@ for (const theme of ['light', 'dark']) {
   ok(`${theme}: toolbar icons have at least 3:1 contrast with the toolbar`, ratio(out[theme].toolbarIcon, out[theme].toolbarBg) >= 3, [out[theme].toolbarIcon, out[theme].toolbarBg])
   // the selection overlay, guides and lock badge use colours that read on the canvas background
   const sel = await pg.evaluate(() => { const s = document.querySelector('.selbox'); return s ? getComputedStyle(s).borderTopColor : null })
+  // the style panel's default stroke follows the theme, also when the theme is switched while it is open
+  const ink = await pg.evaluate(() => { const i = document.createElement('i'); i.style.color = 'var(--fg)'; document.body.appendChild(i); const c = getComputedStyle(i).color.match(/\d+/g); i.remove(); return '#' + c.slice(0, 3).map(v => (+v).toString(16).padStart(2, '0')).join('') })
+  ok(`${theme}: the stroke colour field shows the theme's ink (${ink})`, (await pg.locator('[aria-label="Stroke colour (hex)"]').inputValue()) === ink, [await pg.locator('[aria-label="Stroke colour (hex)"]').inputValue(), ink])
   ok(`${theme}: a selection frame is drawn`, !!sel)
   ok(`${theme}: the selection frame has at least 3:1 contrast with the canvas`, sel && ratio(sel, out[theme].canvasBg) >= 3, [sel, out[theme].canvasBg])
   // an arrow with no stored colour follows the theme's ink and shows on this canvas

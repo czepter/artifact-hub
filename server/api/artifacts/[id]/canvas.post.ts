@@ -18,7 +18,8 @@ export default defineEventHandler(async (event) => {
   const raw = readFile(id, a.current_version, 'canvas.json')
   if (raw) { try { current = JSON.parse(raw.content.toString('utf8')) } catch { throw createError({ statusCode: 422, statusMessage: 'canvas.json is not valid JSON' }) } }
   try {
-    const r = applyCanvasOps(current, listFiles(id, a.current_version).map(f => f.path), b.ops as CanvasOp[])
+    // (pictures uploaded with this edit count as present: the shared validator checks that an added or re-sourced image has its file)
+    const r = applyCanvasOps(current, [...listFiles(id, a.current_version).map(f => f.path), ...uploads.map(u => u.path)], b.ops as CanvasOp[])
     // duplicateBoard: the copy is byte for byte the source (a board added earlier in the same batch is still in addFiles).
     // (a source may be a board added, or copied, earlier in the same batch; copies keep the exact bytes)
     const made = new Map<string, string>(r.addFiles.map(f => [f.path, Buffer.from(f.content, 'utf8').toString('base64')]))
@@ -28,10 +29,6 @@ export default defineEventHandler(async (event) => {
       made.set(c.to, src)
       return { path: c.to, content: src, encoding: 'base64' as const }
     })
-    const have = new Set([...listFiles(id, a.current_version).map(f => f.path), ...uploads.map(u => u.path)])
-    // Only pictures this edit adds or changes must exist: a canvas with an older missing file can still be edited.
-    const touched = new Set((b.ops as CanvasOp[]).flatMap(op => (op.type === 'addNote' || (op.type === 'updateNote' && (op.patch?.src !== undefined || op.patch?.kind !== undefined))) ? [op.id] : []))
-    for (const nid of touched) { const n = r.canvas.notes[nid]; if (n?.kind === 'image' && !have.has(String(n.src))) throw new CanvasError(400, `The image ${n.src} is not in this artifact`) }
     const pub = publish({
       id, baseVersion: a.current_version,
       files: [{ path: 'canvas.json', content: JSON.stringify(r.canvas, null, 2) }, ...r.addFiles, ...copies, ...uploads],

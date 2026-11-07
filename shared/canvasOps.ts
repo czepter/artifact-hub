@@ -247,6 +247,7 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         if (clean.kind === 'image' && !clean.src) throw new CanvasError(400, 'An image needs a source')
         if (clean.kind === 'image' && (clean.w === undefined || clean.h === undefined)) throw new CanvasError(400, 'An image needs a width and a height')
         if (clean.kind !== 'image' && clean.src) throw new CanvasError(400, 'Only images have a source')
+        if (clean.kind === 'image' && !taken.has(String(clean.src))) throw new CanvasError(400, `The image ${clean.src} is not in this artifact`)
         checkBind(canvas, op.id, clean)
         canvas.notes[op.id] = clean
         if (Array.isArray(canvas.noteOrder)) canvas.noteOrder = [...orderedNoteIds(canvas).filter(i => i !== op.id), op.id]
@@ -257,6 +258,7 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         if (!n) throw new CanvasError(404, `No such note: ${op.id}`)
         const clean = cleanNote(op.patch ?? {}, n)
         if (clean.kind === 'image' && !clean.src) throw new CanvasError(400, 'An image needs a source')
+        if (clean.kind === 'image' && op.patch?.src !== undefined && !taken.has(String(clean.src))) throw new CanvasError(400, `The image ${clean.src} is not in this artifact`)
         if (clean.kind !== 'image' && clean.src) delete clean.src // a note that stops being an image drops its picture
         if (op.patch?.bind !== undefined) checkBind(canvas, op.id, clean) // a stale bind elsewhere never blocks moving the note
         canvas.notes[op.id] = clean

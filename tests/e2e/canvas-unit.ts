@@ -131,7 +131,7 @@ ok('smoothPath: M then cubic segments through every point; two points are a line
 ok('penPath is a smooth curve now', penPath({ kind: 'pen', x: 10, y: 10, w: 0, h: 0, points: [[0, 0], [20, 5], [40, 0]] }).includes('C'))
 ok('contentOutside: only when something reaches beyond the window', !contentOutside({ x: 0, y: 0, w: 100, h: 100 }, { tx: 0, ty: 0, k: 1 }, { w: 800, h: 600 }) && contentOutside({ x: 0, y: 0, w: 2000, h: 100 }, { tx: 0, ty: 0, k: 1 }, { w: 800, h: 600 }) && contentOutside({ x: -50, y: 0, w: 100, h: 100 }, { tx: 0, ty: 0, k: 1 }, { w: 800, h: 600 }) && !contentOutside(null, { tx: 0, ty: 0, k: 1 }, { w: 1, h: 1 }) && !contentOutside({ x: 100, y: 100, w: 100, h: 100 }, { tx: -50, ty: -50, k: 2 }, { w: 800, h: 600 }))
 ok('image notes need a valid asset path', (() => {
-  const r = applyCanvasOps(null, [], [{ type: 'addNote', id: 'im', note: { kind: 'image', src: 'assets/0123456789abcdef.png', x: 5, y: 6, w: 100, h: 60 } }]).canvas.notes.im
+  const r = applyCanvasOps(null, ['assets/0123456789abcdef.png'], [{ type: 'addNote', id: 'im', note: { kind: 'image', src: 'assets/0123456789abcdef.png', x: 5, y: 6, w: 100, h: 60 } }]).canvas.notes.im
   return r.kind === 'image' && r.src === 'assets/0123456789abcdef.png' && r.w === 100
 })())
 for (const [name, note] of [['no source', { kind: 'image', w: 10, h: 10 }], ['a path outside assets/', { kind: 'image', src: 'screens/a.png' }], ['a traversal', { kind: 'image', src: 'assets/../x.png' }], ['a wrong extension', { kind: 'image', src: 'assets/0123456789abcdef.svg' }], ['a short hash', { kind: 'image', src: 'assets/abc.png' }], ['a source on a rect', { kind: 'rect', src: 'assets/0123456789abcdef.png' }]] as const)
@@ -145,7 +145,7 @@ ok('smoothPath never leaves the box of its points (no overshoot at a corner)', (
   return nums.every(v => v >= 0 && v <= 100)
 })())
 ok('updateNote cannot make an image without a source, and a note that stops being an image drops it', (() => {
-  const base = applyCanvasOps(null, [], [{ type: 'addNote', id: 'im', note: { kind: 'image', src: 'assets/0123456789abcdef.png', w: 10, h: 10 } }, { type: 'addNote', id: 'r', note: { kind: 'rect', w: 10, h: 10 } }]).canvas
+  const base = applyCanvasOps(null, ['assets/0123456789abcdef.png'], [{ type: 'addNote', id: 'im', note: { kind: 'image', src: 'assets/0123456789abcdef.png', w: 10, h: 10 } }, { type: 'addNote', id: 'r', note: { kind: 'rect', w: 10, h: 10 } }]).canvas
   let e = 0
   try { applyCanvasOps(base, [], [{ type: 'updateNote', id: 'r', patch: { kind: 'image' } }]) } catch (x: any) { e = x.status }
   const back = applyCanvasOps(base, [], [{ type: 'updateNote', id: 'im', patch: { kind: 'rect' } }]).canvas.notes.im
@@ -153,6 +153,13 @@ ok('updateNote cannot make an image without a source, and a note that stops bein
 })())
 ok('styleOps writes fillStyle for rect and oval only', same(styleOps([{ id: 'r', kind: 'rect' }, { id: 'a', kind: 'arrow' }], { fillStyle: 'hatch' }), [{ type: 'updateNote', id: 'r', patch: { fillStyle: 'hatch' } }]))
 throws('an image needs a width and a height', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { kind: 'image', src: 'assets/0123456789abcdef.png' } }]), 400)
+throws('an image whose file is not in the artifact is refused by the shared validator', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { kind: 'image', src: 'assets/0123456789abcdef.png', w: 10, h: 10 } }]), 400)
+ok('moving an image note whose file is missing is a plain update; re-sourcing to a missing file is refused', (() => {
+  const cv: any = { ...emptyCanvas(), notes: { im: { kind: 'image', src: 'assets/aaaaaaaaaaaaaaaa.png', x: 0, y: 0, w: 10, h: 10 } } }
+  const moved = applyCanvasOps(cv, [], [{ type: 'updateNote', id: 'im', patch: { x: 5 } }]).canvas.notes.im.x === 5
+  let e = 0; try { applyCanvasOps(cv, [], [{ type: 'updateNote', id: 'im', patch: { src: 'assets/bbbbbbbbbbbbbbbb.png' } }]) } catch (x: any) { e = x.status }
+  return moved && e === 400 && applyCanvasOps(cv, ['assets/bbbbbbbbbbbbbbbb.png'], [{ type: 'updateNote', id: 'im', patch: { src: 'assets/bbbbbbbbbbbbbbbb.png' } }]).canvas.notes.im.src.endsWith('bbbbbbbbbbbbbbbb.png')
+})())
 // limits stay
 throws('more than 200 operations rejected', () => applyCanvasOps(null, [], Array.from({ length: 201 }, (_, i) => ({ type: 'addNote' as const, id: 'n' + i, note: {} }))), 413)
 throws('more than 1000 notes rejected', () => { let c: any = null; for (let i = 0; i < 6; i++) c = applyCanvasOps(c, [], Array.from({ length: 200 }, (_, j) => ({ type: 'addNote' as const, id: `n${i}_${j}`, note: {} }))).canvas }, 413)

@@ -13,8 +13,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ pickNote: [id: string], pickBoard: [path: string], pickElement: [p: { board: string, id: string }] }>()
 
-const KIND_LABEL: Record<string, string> = { sticky: 'Note', text: 'Text', title1: 'Title', rect: 'Rectangle', oval: 'Oval', line: 'Line', arrow: 'Arrow', pen: 'Drawing' }
-const KIND_ICON: Record<string, string> = { sticky: '▤', text: 'T', title1: 'T', rect: '▢', oval: '◯', line: '╱', arrow: '↗', pen: '✎' }
+const KIND_LABEL: Record<string, string> = { sticky: 'Note', text: 'Text', title1: 'Title', rect: 'Rectangle', oval: 'Oval', line: 'Line', arrow: 'Arrow', pen: 'Drawing', image: 'Picture' }
+const KIND_ICON: Record<string, string> = { sticky: '▤', text: 'T', title1: 'T', rect: '▢', oval: '◯', line: '╱', arrow: '↗', pen: '✎', image: '▣' }
 
 const notes = computed(() => Object.entries(props.canvas?.notes ?? {}).map(([id, n]: [string, any]) => {
   const kind = n.kind ?? 'sticky'

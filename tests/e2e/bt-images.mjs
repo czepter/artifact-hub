@@ -28,6 +28,7 @@ const raw = Buffer.from(await (await fetch(`${process.env.HUB}${view.frameBase}$
 ok('it was shrunk to 2048 px on its long side (PNG header)', raw.readUInt32BE(16) === 2048 && raw.readUInt32BE(20) === 1152, [raw.readUInt32BE(16), raw.readUInt32BE(20)])
 ok('its name is the hash of its bytes', createHash('sha256').update(raw).digest('hex').slice(0, 16) === imgs[0][1].src.slice(7, 23))
 ok('it is drawn on the canvas and loads', await pg.waitForFunction(() => { const i = document.querySelector('.note.image img'); return i && i.complete && i.naturalWidth > 0 }, null, { timeout: 8000 }).then(() => true).catch(() => false))
+ok('the layers list calls it a Picture', await pg.locator('.cl .row', { hasText: 'Picture' }).count() >= 1)
 ok('the picture note is 480 px wide at most, in proportion', imgs[0][1].w <= 480.1 && Math.abs(imgs[0][1].w / imgs[0][1].h - 3200 / 1800) < 0.02, imgs[0][1])
 await pg.keyboard.press('Control+z'); await t.settle(2800)
 ok('one undo removes the picture note', geom(await t.canvas()) === g0 && Object.values((await t.canvas()).notes).every(n => n.kind !== 'image'))

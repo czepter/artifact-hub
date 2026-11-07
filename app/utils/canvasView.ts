@@ -10,6 +10,18 @@ export interface NoteView {
 /** Stroke colour: the new `stroke` field, else the older `color`. */
 /** Without a stored colour the stroke follows the theme's ink, so it shows on both the light and the dark canvas. */
 export const strokeOf = (n: Pick<NoteView, 'stroke' | 'color'>) => n.stroke ?? (n.color || 'var(--fg)')
+/** Like themeInk, but follows the theme: it updates when the light/dark choice or the system preference changes. */
+export function useThemeInk() {
+  const ink = ref(themeInk())
+  onMounted(() => {
+    const update = () => { ink.value = themeInk() }
+    update()
+    const mo = new MutationObserver(update); mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    const mq = matchMedia('(prefers-color-scheme: dark)'); mq.addEventListener('change', update)
+    onBeforeUnmount(() => { mo.disconnect(); mq.removeEventListener('change', update) })
+  })
+  return ink
+}
 /** The theme's ink as a #rrggbb value (for colour inputs that cannot take a CSS variable). */
 export function themeInk(): string {
   if (typeof document === 'undefined') return '#1c1b19'

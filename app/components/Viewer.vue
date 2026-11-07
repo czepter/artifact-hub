@@ -173,7 +173,7 @@ function onCanvasOps(ops: CanvasOp[], merge = '', files?: { path: string, conten
   if (ops.length > 200) { onEditNote('That is too many items for one change (200 at most). Select fewer.'); return }
   const base = canvasDraft.value ?? data.value?.canvas ?? null
   try {
-    canvasDraft.value = applyCanvasOps(base, (data.value?.files ?? []).map(f => f.path), ops).canvas
+    canvasDraft.value = applyCanvasOps(base, [...(data.value?.files ?? []).map(f => f.path), ...(files ?? []).map(f => f.path)], ops).canvas
   } catch (e: any) { onEditNote(e?.message ?? 'That change is not allowed'); return }
   // The server takes at most 200 operations per save: save what is pending first rather than overflow it and lose it.
   // Each gesture is its own save and undo step; only repeats of the same kind (a held arrow key, a slider drag) fold together.
