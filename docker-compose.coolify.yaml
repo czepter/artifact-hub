@@ -1,0 +1,22 @@
+services:
+  app:
+    image: ghcr.io/czepter/artifact-hub:${HUB_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - SERVICE_FQDN_APP_3000
+      - NUXT_BASE_URL=${SERVICE_URL_APP}
+      - NUXT_SESSION_SECRET=${SERVICE_PASSWORD_64_SESSION}
+      - HUB_DB=/data/hub.sqlite
+      - NUXT_GITHUB_CLIENT_ID=${NUXT_GITHUB_CLIENT_ID:-}
+      - NUXT_GITHUB_CLIENT_SECRET=${NUXT_GITHUB_CLIENT_SECRET:-}
+    volumes:
+      - hub-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  hub-data:
