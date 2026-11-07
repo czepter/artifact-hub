@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 const props = defineProps<{
   canvas: any
   trees: Record<string, TreeNode>
-  canvasSel: { type: 'board' | 'note', id: string } | null
+  canvasSel: { type: 'board' | 'note', id: string }[]
   selElement: { board: string, id: string } | null
 }>()
 const emit = defineEmits<{ pickNote: [id: string], pickBoard: [path: string], pickElement: [p: { board: string, id: string }] }>()
@@ -46,10 +46,11 @@ watch(() => props.trees, (t) => {
 }, { immediate: true, deep: false })
 // The board holding the current selection is open.
 watch(() => [props.canvasSel, props.selElement?.board], () => {
-  const b = props.canvasSel?.type === 'board' ? props.canvasSel.id : props.selElement?.board
+  const b = props.canvasSel.find(s => s.type === 'board')?.id ?? props.selElement?.board
   if (b && !openBoards.value.has(b)) openBoards.value = new Set([...openBoards.value, b])
 }, { immediate: true })
 
+const isSel = (type: 'board' | 'note', id: string) => props.canvasSel.some(s => s.type === type && s.id === id)
 function toggleBoard(path: string) { const n = new Set(openBoards.value); if (n.has(path)) n.delete(path); else n.add(path); openBoards.value = n }
 function toggleEl(board: string, id: string) { const n = new Set(openEls[board] ?? []); if (n.has(id)) n.delete(id); else n.add(id); openEls[board] = n }
 const emptyOpen = new Set<string>()
@@ -57,13 +58,13 @@ const emptyOpen = new Set<string>()
 
 <template>
   <ul class="cl" role="tree" aria-label="Canvas layers">
-    <li v-for="n in notes" :key="n.id" role="treeitem" :aria-selected="canvasSel?.type === 'note' && canvasSel.id === n.id">
-      <div class="row" :class="{ sel: canvasSel?.type === 'note' && canvasSel.id === n.id }" @click="emit('pickNote', n.id)">
+    <li v-for="n in notes" :key="n.id" role="treeitem" :aria-selected="isSel('note', n.id)">
+      <div class="row" :class="{ sel: isSel('note', n.id) }" @click="emit('pickNote', n.id)">
         <span class="ic">{{ n.icon }}</span><span class="kind">{{ n.label }}</span><span v-if="n.text" class="txt">“{{ n.text }}”</span>
       </div>
     </li>
     <li v-for="b in boards" :key="b.path" role="treeitem" :aria-expanded="openBoards.has(b.path)">
-      <div class="row board" :class="{ sel: canvasSel?.type === 'board' && canvasSel.id === b.path }" @click="emit('pickBoard', b.path)">
+      <div class="row board" :class="{ sel: isSel('board', b.path) }" @click="emit('pickBoard', b.path)">
         <Button variant="ghost" size="icon-xs" class="caret size-4 shrink-0 p-0" :aria-label="openBoards.has(b.path) ? 'Collapse board' : 'Expand board'" tabindex="-1" @click.stop="toggleBoard(b.path)"><component :is="openBoards.has(b.path) ? ChevronDown : ChevronRight" class="size-3" /></Button>
         <span class="ic">#</span><span class="name">{{ b.title }}</span>
       </div>

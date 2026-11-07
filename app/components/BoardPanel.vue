@@ -10,38 +10,44 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 
-const props = defineProps<{ sel: { type: 'board' | 'note', id: string } | null, canvas: any, isCanvas: boolean, boardCount: number }>()
-const emit = defineEmits<{ op: [op: CanvasOp], editContent: [path: string], play: [path: string] }>()
+const props = defineProps<{ sel: { type: 'board' | 'note', id: string }[], canvas: any, isCanvas: boolean, boardCount: number }>()
+const emit = defineEmits<{ ops: [ops: CanvasOp[]], editContent: [path: string], play: [path: string] }>()
 
-const board = computed(() => (props.sel?.type === 'board' ? props.canvas?.boards?.[props.sel.id] : null))
-const note = computed(() => (props.sel?.type === 'note' ? props.canvas?.notes?.[props.sel.id] : null))
+// One selected item gets its own controls; several get a summary with the actions that apply to all.
+const one = computed(() => (props.sel.length === 1 ? props.sel[0]! : null))
+const board = computed(() => (one.value?.type === 'board' ? props.canvas?.boards?.[one.value.id] : null))
+const note = computed(() => (one.value?.type === 'note' ? props.canvas?.notes?.[one.value.id] : null))
+const many = computed(() => props.sel.length > 1)
+const manyLabel = computed(() => { const b = props.sel.filter(s => s.type === 'board').length, n = props.sel.length - b; return [b && `${b} board${b === 1 ? '' : 's'}`, n && `${n} note${n === 1 ? '' : 's'}`].filter(Boolean).join(' and ') })
+const emitOp = (op: CanvasOp) => emit('ops', [op])
+function removeSelection() { emit('ops', props.sel.map(s => (s.type === 'board' ? { type: 'removeBoard', path: s.id } : { type: 'deleteNote', id: s.id }) as CanvasOp)) }
 const kind = computed(() => note.value?.kind ?? 'sticky')
 const FILLS = ['yellow', 'gray', 'red', 'orange', 'green', 'teal', 'blue', 'purple', 'pink', 'none']
 const FILL_HEX: Record<string, string> = { yellow: '#fef3c7', gray: '#f1f1f1', red: '#fecaca', orange: '#fed7aa', green: '#bbf7d0', teal: '#99f6e4', blue: '#bfdbfe', purple: '#e9d5ff', pink: '#fbcfe8', none: 'transparent' }
 
 const num = (e: Event) => Number((e.target as HTMLInputElement).value)
-function patchBoard(patch: Record<string, unknown>) { if (props.sel) emit('op', { type: 'updateBoard', path: props.sel.id, patch } as CanvasOp) }
-function patchNote(patch: Record<string, unknown>) { if (props.sel) emit('op', { type: 'updateNote', id: props.sel.id, patch } as CanvasOp) }
+function patchBoard(patch: Record<string, unknown>) { if (one.value) emitOp({ type: 'updateBoard', path: one.value.id, patch } as CanvasOp) }
+function patchNote(patch: Record<string, unknown>) { if (one.value) emitOp({ type: 'updateNote', id: one.value.id, patch } as CanvasOp) }
 const confirmDelete = ref(false)
+const confirmDeleteMany = ref(false)
 function removeBoard() {
-  if (!props.sel) return
-  emit('op', { type: 'removeBoard', path: props.sel.id })
+  if (one.value) emitOp({ type: 'removeBoard', path: one.value.id })
 }
 function addBoard() {
   const xs = Object.values(props.canvas?.boards ?? {}).map((b: any) => (+b.x || 0) + (+b.w || 0))
-  emit('op', { type: 'addBoard', title: 'Board', x: (xs.length ? Math.max(...xs) : 1280) + 120, y: 0, w: 1280, h: 800 })
+  emitOp({ type: 'addBoard', title: 'Board', x: (xs.length ? Math.max(...xs) : 1280) + 120, y: 0, w: 1280, h: 800 })
 }
 </script>
 
 <template>
   <div class="grid grid-cols-[minmax(0,1fr)] gap-4 text-[13px]">
-    <template v-if="board && sel">
+    <template v-if="board && one">
       <section class="grid gap-2">
         <h3 class="sec">Board</h3>
         <div class="grid gap-1.5"><Label>Name</Label><Input class="h-8" :model-value="board.title" @change="patchBoard({ title: ($event.target as HTMLInputElement).value })" /></div>
         <div class="flex flex-wrap gap-1.5">
-          <Button size="xs" @click="emit('editContent', sel.id)"><Pencil />Edit content</Button>
-          <Button size="xs" variant="outline" @click="emit('play', sel.id)"><Play />Play</Button>
+          <Button size="xs" @click="emit('editContent', one.id)"><Pencil />Edit content</Button>
+          <Button size="xs" variant="outline" @click="emit('play', one.id)"><Play />Play</Button>
           <Button size="xs" variant="outline" class="text-destructive" @click="confirmDelete = true"><Trash2 />Delete</Button>
         </div>
         <p class="hint">Drag the board to move it. Double-click it to edit what is inside.</p>
@@ -60,7 +66,7 @@ function addBoard() {
       <AlertDialog v-model:open="confirmDelete">
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete the board “{{ board.title ?? sel.id }}”?</AlertDialogTitle>
+            <AlertDialogTitle>Delete the board “{{ board.title ?? one.id }}”?</AlertDialogTitle>
             <AlertDialogDescription>Its file is removed from the current version. Older versions keep it.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -71,7 +77,7 @@ function addBoard() {
       </AlertDialog>
     </template>
 
-    <template v-else-if="note && sel">
+    <template v-else-if="note && one">
       <section class="grid gap-2">
         <h3 class="sec">{{ ({ sticky: 'Sticky note', text: 'Text', rect: 'Rectangle', oval: 'Oval', line: 'Line', arrow: 'Arrow', pen: 'Drawing', title1: 'Title' } as Record<string, string>)[kind] ?? 'Note' }}</h3>
         <div v-if="kind === 'sticky' || kind === 'text' || kind === 'title1'" class="grid gap-1.5"><Label>Text</Label><Textarea rows="3" :model-value="note.text" @change="patchNote({ text: ($event.target as HTMLTextAreaElement).value })" /></div>
@@ -97,7 +103,7 @@ function addBoard() {
           </div>
           <Label class="h-8 font-normal"><Checkbox :model-value="!!note.bold" @update:model-value="patchNote({ bold: !!$event })" />Bold</Label>
         </div>
-        <div><Button size="xs" variant="outline" class="text-destructive" @click="emit('op', { type: 'deleteNote', id: sel.id })"><Trash2 />Delete</Button></div>
+        <div><Button size="xs" variant="outline" class="text-destructive" @click="emitOp({ type: 'deleteNote', id: one.id })"><Trash2 />Delete</Button></div>
       </section>
       <section v-if="kind !== 'pen'" class="grid gap-2">
         <h3 class="sec">Frame</h3>
@@ -108,6 +114,26 @@ function addBoard() {
           <div v-if="kind !== 'text'" class="grid gap-1.5"><Label>{{ kind === 'line' || kind === 'arrow' ? 'ΔY' : 'Height' }}</Label><Input class="h-8" type="number" :model-value="note.h" @change="patchNote({ h: num($event) })" /></div>
         </div>
       </section>
+    </template>
+
+    <template v-else-if="many">
+      <section class="grid gap-2">
+        <h3 class="sec">{{ sel.length }} items</h3>
+        <p class="hint">{{ manyLabel }} selected. Drag to move them together, or use a corner handle to resize them as a group.</p>
+        <div><Button size="xs" variant="outline" class="text-destructive" @click="confirmDeleteMany = true"><Trash2 />Delete all</Button></div>
+      </section>
+      <AlertDialog v-model:open="confirmDeleteMany">
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {{ sel.length }} items?</AlertDialogTitle>
+            <AlertDialogDescription>{{ manyLabel }}. Board files are removed from the current version. Older versions keep them.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction @click="removeSelection">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </template>
 
     <template v-else>

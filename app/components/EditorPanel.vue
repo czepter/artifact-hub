@@ -19,7 +19,7 @@ const props = defineProps<{
   /** true while editing inside a board (focused board or a single page) */
   elementLevel: boolean
   tree: TreeNode | null
-  canvasSel: { type: 'board' | 'note', id: string } | null
+  canvasSel: { type: 'board' | 'note', id: string }[]
   /** Element trees of every board (for the canvas-wide layers list). */
   trees: Record<string, TreeNode>
   canvas: any
@@ -45,6 +45,7 @@ const emit = defineEmits<{
   pickBoard: [path: string]
   pickElement: [p: { board: string, id: string }]
   canvasOp: [op: CanvasOp]
+  canvasOps: [ops: CanvasOp[]]
   editContent: [path: string]
   play: [path: string]
   tweak: [values: Record<string, unknown>]
@@ -162,7 +163,7 @@ const layersOpen = ref(true)
             @pick-element="emit('pickElement', $event)"
           />
         </section>
-      <BoardPanel :sel="canvasSel" :canvas="canvas" :is-canvas="isCanvas" :board-count="boardCount" @op="emit('canvasOp', $event)" @edit-content="emit('editContent', $event)" @play="emit('play', $event)" />
+      <BoardPanel :sel="canvasSel" :canvas="canvas" :is-canvas="isCanvas" :board-count="boardCount" @ops="emit('canvasOps', $event)" @edit-content="emit('editContent', $event)" @play="emit('play', $event)" />
       </template>
       <section v-if="!isCanvas && elementLevel">
         <h3>Canvas</h3>

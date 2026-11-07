@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { Anchor, Comment, ViewData, EditSel } from '~/types'
 import { CONTAINER_TAGS, paletteHtml, type PaletteKind } from '#shared/palette'
-import { applyCanvasOps, type CanvasOp } from '#shared/canvasOps'
+import { applyCanvasOps, mergeOps, type CanvasOp } from '#shared/canvasOps'
 import type { TreeNode } from './LayerTree.vue'
 
 type Tool = 'select' | 'hand' | 'text' | 'artboard' | 'sticky' | 'rect' | 'oval' | 'arrow' | 'line' | 'pen'
@@ -36,6 +36,7 @@ interface CanvasApi {
   enterFocus: (path: string) => void
   boardAtPoint: (x: number, y: number) => { path: string, x: number, y: number } | null
   selectBoard: (path: string | null) => void
+  selectNote: (id: string | null) => void
 }
 
 const data = ref<ViewData | null>(null)
@@ -74,7 +75,7 @@ onMounted(() => { try { if (localStorage.getItem('hub_dragmode') === 'flow') dra
 watch(dragMode, (m) => { try { localStorage.setItem('hub_dragmode', m) } catch {} })
 const panelTab = ref<'props' | 'code' | 'tweaks'>('props')
 const canvasDraft = ref<any | null>(null)
-const canvasSel = ref<{ type: 'board' | 'note', id: string } | null>(null)
+const canvasSel = ref<{ type: 'board' | 'note', id: string }[]>([])
 const layerTree = reactive<Record<string, TreeNode>>({})
 const tweaksByBoard = reactive<Record<string, { defs: Record<string, any> | null, values: Record<string, unknown> }>>({})
 const codeBusy = ref(false)
@@ -91,7 +92,7 @@ const effectiveCanvas = computed(() => canvasDraft.value ?? data.value?.canvas ?
 const hasBoards = computed(() => !!effectiveCanvas.value?.boards)
 /** Editing inside one board (a focused board, or a plain single page), as opposed to arranging boards. */
 const elementLevel = computed(() => editMode.value && (!hasBoards.value || !!canvasRef.value?.focusBoard))
-const activeBoard = computed(() => sel.value?.board ?? (canvasSel.value?.type === 'board' ? canvasSel.value.id : null) ?? canvasRef.value?.focusBoard ?? canvasRef.value?.selectedBoardPath ?? canvasRef.value?.firstBoard ?? null)
+const activeBoard = computed(() => sel.value?.board ?? (canvasSel.value.length === 1 && canvasSel.value[0]!.type === 'board' ? canvasSel.value[0]!.id : null) ?? canvasRef.value?.focusBoard ?? canvasRef.value?.selectedBoardPath ?? canvasRef.value?.firstBoard ?? null)
 const activeTree = computed(() => (activeBoard.value ? layerTree[activeBoard.value] ?? null : null))
 const activeTweaks = computed(() => (activeBoard.value ? tweaksByBoard[activeBoard.value] ?? null : null))
 const textFiles = computed(() => (data.value?.files ?? []).map(f => f.path))
@@ -104,7 +105,7 @@ async function toggleEdit() {
   closePopover()
   baseVersion = data.value.artifact.live
   history.value = []
-  editStatus.value = 'idle'; editMessage.value = ''; editNote.value = ''; sel.value = null; canvasSel.value = null
+  editStatus.value = 'idle'; editMessage.value = ''; editNote.value = ''; sel.value = null; canvasSel.value = []
   tool.value = 'select'; panelTab.value = 'props'
   editMode.value = true
   const c = canvasRef.value
@@ -118,7 +119,7 @@ async function toggleEdit() {
 async function stopEdit() {
   await flush()
   editMode.value = false
-  sel.value = null; canvasSel.value = null; canvasDraft.value = null
+  sel.value = null; canvasSel.value = []; canvasDraft.value = null
   if (enteredFocus) { canvasRef.value?.exitFocus(); enteredFocus = false }
 }
 
@@ -136,14 +137,18 @@ function onEditOp(board: string, op: Record<string, unknown>) {
   pending.set(board, list)
   queueSave()
 }
-function onCanvasOp(op: CanvasOp) {
+/** One user gesture = one call: the ops are applied to the preview together (all or none) and saved in one batch. */
+function onCanvasOps(ops: CanvasOp[]) {
+  if (!ops.length) return
   const base = canvasDraft.value ?? data.value?.canvas ?? null
   try {
-    canvasDraft.value = applyCanvasOps(base, (data.value?.files ?? []).map(f => f.path), [op]).canvas
+    canvasDraft.value = applyCanvasOps(base, (data.value?.files ?? []).map(f => f.path), ops).canvas
   } catch (e: any) { onEditNote(e?.message ?? 'That change is not allowed'); return }
-  canvasPending.push(op)
-  queueSave(op.type === 'addBoard' || op.type === 'removeBoard')
+  canvasPending = mergeOps(canvasPending, ops)
+  // Adding or removing a board changes files, so it is saved at once; everything else waits for a pause.
+  queueSave(ops.some(op => op.type === 'addBoard' || op.type === 'removeBoard' || op.type === 'duplicateBoard'))
 }
+const onCanvasOp = (op: CanvasOp) => onCanvasOps([op])
 function onEditNote(text: string) {
   editNote.value = text
   clearTimeout(noteTimer)
@@ -640,7 +645,7 @@ function endPresent() {
 function onFocusChange(path: string | null) {
   if (path === null && presenting.value) endPresent()
   sel.value = null // the selection belonged to the board we just left
-  if (path === null) canvasSel.value = null
+  if (path === null) canvasSel.value = []
 }
 
 useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact Hub` : 'Artifact Hub' }))
@@ -767,7 +772,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         @edit-tweaks="onEditTweaks"
         @edit-export="onEditExport"
         @edit-reload="(b: string) => resync([b])"
-        @canvas-op="onCanvasOp"
+        @canvas-ops="onCanvasOps"
         @canvas-select="(s) => (canvasSel = s)"
         @tool="(t) => (tool = t)"
         @play="playBoard"
@@ -837,6 +842,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         @pick-board="(p) => canvasRef?.selectBoard(p)"
         @pick-element="pickElement"
         @canvas-op="onCanvasOp"
+        @canvas-ops="onCanvasOps"
         @edit-content="editContent"
         @play="playBoard"
         @tweak="onTweakChange"
