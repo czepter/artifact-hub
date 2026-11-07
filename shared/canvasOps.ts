@@ -245,6 +245,7 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         if (Object.keys(canvas.notes).length >= 1000) throw new CanvasError(413, 'Too many notes')
         const clean = cleanNote(op.note ?? {})
         if (clean.kind === 'image' && !clean.src) throw new CanvasError(400, 'An image needs a source')
+        if (clean.kind === 'image' && (clean.w === undefined || clean.h === undefined)) throw new CanvasError(400, 'An image needs a width and a height')
         if (clean.kind !== 'image' && clean.src) throw new CanvasError(400, 'Only images have a source')
         checkBind(canvas, op.id, clean)
         canvas.notes[op.id] = clean

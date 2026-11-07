@@ -152,6 +152,7 @@ ok('updateNote cannot make an image without a source, and a note that stops bein
   return e === 400 && !('src' in back)
 })())
 ok('styleOps writes fillStyle for rect and oval only', same(styleOps([{ id: 'r', kind: 'rect' }, { id: 'a', kind: 'arrow' }], { fillStyle: 'hatch' }), [{ type: 'updateNote', id: 'r', patch: { fillStyle: 'hatch' } }]))
+throws('an image needs a width and a height', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { kind: 'image', src: 'assets/0123456789abcdef.png' } }]), 400)
 // limits stay
 throws('more than 200 operations rejected', () => applyCanvasOps(null, [], Array.from({ length: 201 }, (_, i) => ({ type: 'addNote' as const, id: 'n' + i, note: {} }))), 413)
 throws('more than 1000 notes rejected', () => { let c: any = null; for (let i = 0; i < 6; i++) c = applyCanvasOps(c, [], Array.from({ length: 200 }, (_, j) => ({ type: 'addNote' as const, id: `n${i}_${j}`, note: {} }))).canvas }, 413)

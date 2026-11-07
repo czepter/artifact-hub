@@ -765,7 +765,8 @@ function endpoint(n: NoteView, which: 'start' | 'end') {
   const x = which === 'start' ? n.x : n.x + n.w, y = which === 'start' ? n.y : n.y + n.h
   return { left: x + 'px', top: y + 'px', transform: `translate(-50%, -50%) scale(${1 / k.value})`, cursor: 'move' }
 }
-const creatingPen = computed(() => (creating.value?.pts ? smoothPath(creating.value.pts) : ''))
+// (a long stroke is drawn from a thinned copy while it is being drawn, so the preview stays cheap)
+const creatingPen = computed(() => { const p = creating.value?.pts; if (!p) return ''; const st = Math.ceil(p.length / 250); return smoothPath(st > 1 ? p.filter((_, i) => i % st === 0 || i === p.length - 1) : p) })
 const inCanvasPage = computed(() => isCanvas.value && !focusBoard.value)
 
 defineExpose({ zoomToSelection, align, distribute, boardAtPoint, editCmd, reloadBoard, firstBoard, selectedBoardPath, navKeys, fit, centerOn, pins, broadcast, view, draftPos, enterFocus, exitFocus, step, startPresent, focusBoard, focusIndex, boardCount: computed(() => boards.value.length), selectBoard, selectNote, zoomAt })
