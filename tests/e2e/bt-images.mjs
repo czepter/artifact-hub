@@ -84,5 +84,12 @@ r = await api({ baseVersion: await t.version(), ops: [op(name)], files: Array.fr
 ok('more than 5 pictures in one edit is refused', r.status === 400, r.status)
 r = await api({ baseVersion: await t.version(), ops: [op(name)], files: [{ path: 'screens/evil.html', content: Buffer.from('<script>').toString('base64') }] })
 ok('only assets/<hash>.<image> paths may be uploaded', r.status === 400, r.status)
+// an older image note whose file is missing can still be moved
+{
+  const v = await t.version()
+  const base = (await t.canvas())
+  const r0 = await api({ baseVersion: v, ops: [{ type: 'updateNote', id: Object.keys(base.notes).find(k => base.notes[k].kind === 'image'), patch: { x: 7 } }] })
+  ok('moving an existing image note is a plain update', r0.status === 200, r0.status)
+}
 const clean = t.logs.filter(l => !/favicon|404/.test(l)); ok('no page errors', clean.length === 0, clean)
 await t.browser.close(); process.exit(results.fails ? 1 : 0)

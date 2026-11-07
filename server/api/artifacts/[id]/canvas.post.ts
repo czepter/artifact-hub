@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
     })
     const have = new Set([...listFiles(id, a.current_version).map(f => f.path), ...uploads.map(u => u.path)])
     // Only pictures this edit adds or changes must exist: a canvas with an older missing file can still be edited.
-    const touched = new Set((b.ops as CanvasOp[]).flatMap(op => (op.type === 'addNote' || op.type === 'updateNote') ? [op.id] : []))
+    const touched = new Set((b.ops as CanvasOp[]).flatMap(op => (op.type === 'addNote' || (op.type === 'updateNote' && (op.patch?.src !== undefined || op.patch?.kind !== undefined))) ? [op.id] : []))
     for (const nid of touched) { const n = r.canvas.notes[nid]; if (n?.kind === 'image' && !have.has(String(n.src))) throw new CanvasError(400, `The image ${n.src} is not in this artifact`) }
     const pub = publish({
       id, baseVersion: a.current_version,
