@@ -18,6 +18,8 @@ import { dcSupportJs } from '../dc'
 
 const ORIGIN = 'http://artifact.invalid'
 const MAX_SHOT_H = 8000
+const MAX_SHOT_PIXELS = 16_000_000
+const TOTAL_BUDGET_MS = 60_000
 
 function findExecutable(): string | null {
   const env = process.env.HUB_CHROMIUM
@@ -38,14 +40,16 @@ function findExecutable(): string | null {
 
 let browserP: Promise<any | null> | null = null
 let idle: ReturnType<typeof setTimeout> | null = null
+/** When the browser last failed to start: not retried for a minute, so a broken install does not slow every render. */
+let failedAt = 0
 
 async function getBrowser(): Promise<any | null> {
-  if (process.env.HUB_RENDER_HTML === '0') return null
+  if (process.env.HUB_RENDER_HTML === '0' || Date.now() - failedAt < 60_000) return null
   if (browserP) { const b = await browserP; if (b?.isConnected()) return b; browserP = null }
   browserP = (async () => {
     try {
       const exe = findExecutable()
-      if (!exe) return null
+      if (!exe) { failedAt = Date.now(); return null }
       const { chromium } = await import('playwright-core')
       const b = await chromium.launch({
         executablePath: exe, headless: true,
@@ -54,6 +58,7 @@ async function getBrowser(): Promise<any | null> {
       b.on('disconnected', () => { browserP = null })
       return b
     } catch (e) {
+      failedAt = Date.now()
       console.warn('[render] browser unavailable:', (e as Error).message.split('\n')[0])
       return null
     }
@@ -78,26 +83,29 @@ export async function shootBoards(artifactId: string, version: number, items: Sh
   const browser = await getBrowser()
   if (!browser || !items.length) return out
   if (idle) clearTimeout(idle)
-  const ctx = await browser.newContext({ viewport: { width: 800, height: 600 }, deviceScaleFactor: Math.min(3, Math.max(1, dsf)), serviceWorkers: 'block', acceptDownloads: false, javaScriptEnabled: true, permissions: [], colorScheme: 'light' })
+  const started = Date.now()
   try {
-    await ctx.route('**/*', async (route: any) => {
-      const url = new URL(route.request().url())
-      if (url.origin !== ORIGIN) return route.abort()
-      try {
-        const path = cleanPath(decodeURIComponent(url.pathname.slice(1)) || 'index.html')
-        let file = readFile(artifactId, version, path)
-        if (/(^|\/)support\.js$/.test(path) && (!file || file.content.toString('utf8', 0, 400_000).includes('DCLogic'))) file = { content: Buffer.from(await dcSupportJs()), contentType: 'text/javascript; charset=utf-8' }
-        if (!file) return route.fulfill({ status: 404, body: 'not found' })
-        const body = file.contentType.startsWith('text/html') ? instrumentHtml(file.content.toString('utf8'), { props: tweaks(path) }) : file.content
-        return route.fulfill({ status: 200, contentType: file.contentType, body, headers: { 'Access-Control-Allow-Origin': '*' } })
-      } catch { return route.fulfill({ status: 400, body: 'bad path' }) }
-    })
     for (const it of items) {
-      const page = await ctx.newPage()
+      // Pictures are capped at 16 megapixels (a huge board at device scale 2 would not fit a texture): lower the scale, or leave the board to the outline.
+      const d = Math.min(Math.min(3, Math.max(1, dsf)), Math.sqrt(MAX_SHOT_PIXELS / (it.w * Math.max(it.h, 1))))
+      if (d < 1 || Date.now() - started > TOTAL_BUDGET_MS) continue
+      const ctx = await browser.newContext({ viewport: { width: Math.round(it.w), height: Math.round(it.h) }, deviceScaleFactor: d, serviceWorkers: 'block', acceptDownloads: false, javaScriptEnabled: true, permissions: [], colorScheme: 'light' })
       try {
+        await ctx.route('**/*', async (route: any) => {
+          const url = new URL(route.request().url())
+          if (url.origin !== ORIGIN) return route.abort()
+          try {
+            const path = cleanPath(decodeURIComponent(url.pathname.slice(1)) || 'index.html')
+            let file = readFile(artifactId, version, path)
+            if (/(^|\/)support\.js$/.test(path) && (!file || file.content.toString('utf8', 0, 400_000).includes('DCLogic'))) file = { content: Buffer.from(await dcSupportJs()), contentType: 'text/javascript; charset=utf-8' }
+            if (!file) return route.fulfill({ status: 404, body: 'not found' })
+            const body = file.contentType.startsWith('text/html') ? instrumentHtml(file.content.toString('utf8'), { props: tweaks(path) }) : file.content
+            return route.fulfill({ status: 200, contentType: file.contentType, body, headers: { 'Access-Control-Allow-Origin': '*' } })
+          } catch { return route.fulfill({ status: 400, body: 'bad path' }) }
+        })
+        const page = await ctx.newPage()
         page.on('popup', (p: any) => p.close().catch(() => {}))
-        page.on('dialog', (d: any) => d.dismiss().catch(() => {}))
-        await page.setViewportSize({ width: Math.round(it.w), height: Math.round(it.h) })
+        page.on('dialog', (x: any) => x.dismiss().catch(() => {}))
         await page.goto(`${ORIGIN}/${it.path.split('/').map(encodeURIComponent).join('/')}`, { waitUntil: 'load', timeout: 12_000 })
         await page.evaluate(() => (document as any).fonts?.ready).catch(() => {})
         await page.waitForTimeout(250)
@@ -110,10 +118,9 @@ export async function shootBoards(artifactId: string, version: number, items: Sh
         out.set(it.path, { uri: `data:image/png;base64,${png.toString('base64')}`, w: Math.round(it.w), h })
       } catch (e) {
         console.warn(`[render] board ${it.path} not drawn:`, (e as Error).message.split('\n')[0])
-      } finally { await page.close().catch(() => {}) }
+      } finally { await ctx.close().catch(() => {}) }
     }
   } finally {
-    await ctx.close().catch(() => {})
     idle = setTimeout(() => { browserP?.then(b => b?.close().catch(() => {})); browserP = null }, 60_000)
     idle.unref?.()
   }

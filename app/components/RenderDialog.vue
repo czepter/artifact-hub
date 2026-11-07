@@ -56,7 +56,7 @@ onBeforeUnmount(() => { if (preview.value) URL.revokeObjectURL(preview.value) })
 
 <template>
   <Dialog v-model:open="open">
-    <DialogContent class="max-w-2xl">
+    <DialogContent class="sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>Export as image</DialogTitle>
         <DialogDescription>Drawn on the server from the live version: shapes, notes and arrows as vectors, boards as pictures.</DialogDescription>
