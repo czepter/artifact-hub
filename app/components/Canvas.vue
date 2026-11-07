@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { Comment, ViewData, Anchor } from '~/types'
 import { orderedNoteIds, type Canvas as CanvasT, type CanvasOp } from '#shared/canvasOps'
-import { type AlignMode, type BindTargetBox, type Box, type GeomItem, HANDLES, alignPatches, bindTargetAt, distributePatches, boxesIntersect, constrainCreate, isDirected, itemBox, noteBox, noteGeometry, noteHit, normBox, resolveArrow, round1 } from '#shared/canvasGeometry'
-import { deleteOps, detachBinds, groupKeys, groupOps, lockOps, nudgeOps, patchOps, ungroupOps } from '#shared/canvasItemOps'
+import { type AlignMode, type BindTargetBox, type Box, type GeomItem, HANDLES, contentOutside, fitPenPoints, smoothPath, unionBox, alignPatches, bindTargetAt, distributePatches, boxesIntersect, constrainCreate, isDirected, itemBox, noteBox, noteGeometry, noteHit, normBox, resolveArrow, round1 } from '#shared/canvasGeometry'
+import { deleteOps, detachBinds, groupKeys, nudgeOps, patchOps } from '#shared/canvasItemOps'
 import type { NoteView } from '~/utils/canvasView'
 import type { SelRef } from '~/composables/useCanvasSelection'
 
-import { ArrowLeft, ArrowRight, Lock, Maximize2, Minus, Play, Plus, X } from '@lucide/vue'
+import { ArrowLeft, ArrowRight, Command, Crosshair, Lock, Maximize2, Minus, Play, Plus, X } from '@lucide/vue'
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Button } from '@/components/ui/button'
 import { boardKey, noteKey, refOfKey, useCanvasSelection } from '~/composables/useCanvasSelection'
@@ -23,6 +23,8 @@ const props = defineProps<{
   tool: Tool
   /** Keep the drawing tool after each shape instead of going back to Select. */
   toolLock?: boolean
+  /** Slideshow mode: the laser pointer is offered. */
+  presenting?: boolean
   dragMode?: 'free' | 'flow'
   selectedId: string | null
   draft: { board: string, anchor: Anchor } | null
@@ -44,8 +46,9 @@ const emit = defineEmits<{
   editTweaks: [board: string, t: { defs: Record<string, unknown> | null, values: Record<string, unknown> }]
   editExport: [html: string]
   editReload: [board: string]
-  /** One user gesture: all of its operations, saved together as one undo step. */
-  canvasOps: [ops: CanvasOp[], merge?: string]
+  /** One user gesture: all of its operations, saved together as one undo step (`files`: pictures to store with it). */
+  canvasOps: [ops: CanvasOp[], merge?: string, files?: { path: string, content: string }[]]
+  palette: []
   canvasSelect: [sel: SelRef[]]
   tool: [tool: Tool]
   toolLock: [locked: boolean]
@@ -117,7 +120,7 @@ const rawNotes = computed<NoteView[]>(() => {
   // Back to front: `noteOrder` when the canvas has one, else the order the notes are stored in.
   return orderedNoteIds({ notes: n, noteOrder: cv.value?.noteOrder }).map((id) => {
     const v = n[id], o = noteOv[id] ?? {}, g = noteGeometry(v), kind = g.kind
-    return { id, kind, x: o.x ?? g.x, y: o.y ?? g.y, w: o.w ?? g.w, h: o.h ?? g.h, text: String(v.text ?? ''), fill: v.fill ?? (kind === 'sticky' ? 'yellow' : 'none'), color: v.color ?? '#1c1b19', size: v.size ?? 'm', bold: !!v.bold, points: o.points ?? g.points, locked: !!v.locked, group: v.group, stroke: v.stroke, strokeWidth: v.strokeWidth, strokeStyle: v.strokeStyle, roundness: v.roundness, arrowStart: v.arrowStart, arrowEnd: v.arrowEnd, bind: v.bind }
+    return { id, kind, x: o.x ?? g.x, y: o.y ?? g.y, w: o.w ?? g.w, h: o.h ?? g.h, text: String(v.text ?? ''), fill: v.fill ?? (kind === 'sticky' ? 'yellow' : 'none'), color: v.color ?? '#1c1b19', size: v.size ?? 'm', bold: !!v.bold, points: o.points ?? g.points, locked: !!v.locked, group: v.group, src: v.src, fillStyle: v.fillStyle, stroke: v.stroke, strokeWidth: v.strokeWidth, strokeStyle: v.strokeStyle, roundness: v.roundness, arrowStart: v.arrowStart, arrowEnd: v.arrowEnd, bind: v.bind }
   })
 })
 /** What an arrow can attach to: boards, rectangles, ovals, sticky notes and text, back to front. */
@@ -172,6 +175,7 @@ function enterFocus(path: string) {
 }
 
 function exitFocus() {
+  laser.value = false
   if (!focusBoard.value) return
   pulse()
   focusBoard.value = null
@@ -422,9 +426,8 @@ function onPointerUp(e: PointerEvent) {
     justDragged = true; setTimeout(() => (justDragged = false), 0)
     if (d.pts.length > 2) {
       const x0 = Math.min(...d.pts.map(p => p[0]!)), y0 = Math.min(...d.pts.map(p => p[1]!))
-      // Thin the stroke to at most 400 points before it is stored.
-      const step = Math.max(1, Math.ceil(d.pts.length / 399)) // 399 + the last point stays within the 400-point limit
-      const pts = d.pts.filter((_, i) => i % step === 0 || i === d.pts.length - 1).map(p => [p[0]! - x0, p[1]! - y0])
+      // Simplify the stroke (Ramer-Douglas-Peucker, 1 screen px) and keep it within 400 points; it is drawn as a smooth curve.
+      const pts = fitPenPoints(d.pts.map(p => [p[0]! - x0, p[1]! - y0]), 1 / k.value, 399)
       const id = uid()
       send({ type: 'addNote', id, note: { kind: 'pen', x: round(x0), y: round(y0), points: pts, color: '#1c1b19' } })
       nextTick(() => selectNote(id))
@@ -489,6 +492,7 @@ function handleMod(k: KeyInfo): boolean {
   const c = k.code
   if (k.alt) return false
   if (c === 'KeyA' && !k.shift) { selection.selectAll(); return true }
+  if (c === 'KeyK' && !k.shift) { emit('palette'); return true }
   if (c === 'KeyG') return k.shift ? ungroupSelection() : groupSelection()
   if (c === 'KeyL' && k.shift) return toggleLock()
   if (c === 'KeyC' && !k.shift) return board_.copy()
@@ -498,27 +502,20 @@ function handleMod(k: KeyInfo): boolean {
   return false
 }
 
+// ---- pictures ---------------------------------------------------------------------------------------
+const pictures = useCanvasPictures({
+  canEdit: () => canvasLevel.value, canPaste: () => canvasLevel.value && canvasFocused.value, newId: uid, selection, toWorld, pointer: () => lastClient, viewport, size,
+  emitOps: (ops, files) => emit('canvasOps', ops, undefined, files), notify: msg => emit('editNote', msg), frameBase: () => props.data.frameBase, rev: p => revOf.value[p],
+})
+const { imageUrl, onPaste, onDrop, hasFiles } = pictures
+
+// ---- laser pointer, minimap -------------------------------------------------------------------------
+const laser = ref(false)
+const mapItems = computed(() => allItems.value.map(i => ({ box: itemBox(i), board: i.kind === 'board' })))
+const showMinimap = computed(() => isCanvas.value && !focusBoard.value && contentOutside(unionBox(mapItems.value.map(i => i.box)), { tx: tx.value, ty: ty.value, k: k.value }, size))
+
 // ---- group and lock ---------------------------------------------------------------------------------
-function groupSelection() {
-  const items = selection.selected.value.filter(i => !i.locked)
-  if (items.length < 2) return false
-  send(...groupOps(items, 'g' + uid().slice(2)))
-  return true
-}
-function ungroupSelection() {
-  const ops = ungroupOps(selection.selected.value.filter(i => !i.locked))
-  send(...ops)
-  return ops.length > 0
-}
-/** Locks the selection, or unlocks it when everything selected is already locked. */
-function toggleLock() {
-  const items = selection.selected.value
-  if (!items.length) return false
-  send(...lockOps(items, items.some(i => !i.locked)))
-  return true
-}
-const selectionLocked = computed(() => selection.count.value > 0 && selection.selected.value.every(i => i.locked))
-const selectionGrouped = computed(() => selection.selected.value.some(i => i.group))
+const { groupSelection, ungroupSelection, toggleLock, selectionLocked, selectionGrouped } = useCanvasGrouping(selection, send, uid)
 
 // ---- copy, paste, duplicate, z-order ---------------------------------------------------------------
 const board_ = useCanvasClipboard({ canvas: () => cv.value, selection, send, newId: uid, pointer: () => (lastClient ? toWorld(lastClient.x, lastClient.y) : null), geometry: id => notes.value.find(n => n.id === id) })
@@ -539,6 +536,7 @@ function handleKey(input: string | KeyInfo) {
     if (key === 'ArrowRight' || key === 'PageDown' || key === ' ') step(1)
     else if (key === 'ArrowLeft' || key === 'PageUp') step(-1)
     else if (key === 'Escape') exitFocus()
+    else if (key.toLowerCase() === 'l' && props.presenting) laser.value = !laser.value
     return
   }
   if (canvasLevel.value) {
@@ -768,10 +766,10 @@ function endpoint(n: NoteView, which: 'start' | 'end') {
   const x = which === 'start' ? n.x : n.x + n.w, y = which === 'start' ? n.y : n.y + n.h
   return { left: x + 'px', top: y + 'px', transform: `translate(-50%, -50%) scale(${1 / k.value})`, cursor: 'move' }
 }
-const creatingPen = computed(() => creating.value?.pts ? creating.value.pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]},${p[1]}`).join(' ') : '')
+const creatingPen = computed(() => (creating.value?.pts ? smoothPath(creating.value.pts) : ''))
 const inCanvasPage = computed(() => isCanvas.value && !focusBoard.value)
 
-defineExpose({ align, distribute, boardAtPoint, editCmd, reloadBoard, firstBoard, selectedBoardPath, navKeys, fit, centerOn, pins, broadcast, view, draftPos, enterFocus, exitFocus, step, startPresent, focusBoard, focusIndex, boardCount: computed(() => boards.value.length), selectBoard, selectNote, zoomAt })
+defineExpose({ zoomToSelection, align, distribute, boardAtPoint, editCmd, reloadBoard, firstBoard, selectedBoardPath, navKeys, fit, centerOn, pins, broadcast, view, draftPos, enterFocus, exitFocus, step, startPresent, focusBoard, focusIndex, boardCount: computed(() => boards.value.length), selectBoard, selectNote, zoomAt })
 
 let ro: ResizeObserver | undefined
 onMounted(() => {
@@ -786,6 +784,7 @@ onMounted(() => {
   window.addEventListener('keydown', onKey)
   window.addEventListener('pointerdown', onWindowPointer, true)
   window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('paste', onPaste)
   window.addEventListener('blur', onBlur)
   viewport.value!.addEventListener('wheel', onWheel, { passive: false })
 })
@@ -794,6 +793,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('keyup', onKeyUp)
+  window.removeEventListener('paste', onPaste)
   window.removeEventListener('blur', onBlur)
   window.removeEventListener('pointerdown', onWindowPointer, true)
 })
@@ -813,6 +813,8 @@ watch(isCanvas, () => nextTick(() => fit()))
     @pointerup="onPointerUp"
     @pointercancel="onPointerCancel"
     @click="onViewportClick"
+    @dragover="(e: DragEvent) => hasFiles(e) && e.preventDefault()"
+    @drop="onDrop"
     @contextmenu="onContextMenu"
   >
     <div class="world" :class="{ anim: animate }" :style="{ transform: `translate(${tx}px, ${ty}px) scale(${k})` }">
@@ -850,7 +852,7 @@ watch(isCanvas, () => nextTick(() => fit()))
 
       <!-- notes and shapes sit above the boards -->
       <CanvasNote
-        v-for="n in notes" :key="n.id" :n="n" :selected="selection.has(noteKey(n.id))" :editable="canvasLevel" :editing="editingNote === n.id" :hidden="!!focusBoard" :erasing="erased.includes(n.id)"
+        v-for="n in notes" :key="n.id" :n="n" :selected="selection.has(noteKey(n.id))" :editable="canvasLevel" :editing="editingNote === n.id" :hidden="!!focusBoard" :erasing="erased.includes(n.id)" :image-src="imageUrl(n)"
         @down="onNoteDown($event, n)" @edit="startNoteEdit(n)" @commit="(text) => commitNoteEdit(n, text)"
       />
 
@@ -895,7 +897,10 @@ watch(isCanvas, () => nextTick(() => fit()))
       <span v-if="draftPos" class="pin draft" :style="{ left: draftPos.x + 'px', top: draftPos.y + 'px', transform: `translate(-50%, -100%) scale(${1 / k})` }"><span>+</span></span>
     </div>
 
+    <CanvasMinimap v-if="showMinimap" :items="mapItems" :view="{ tx, ty, k }" :size="size" @jump="(x, y) => centerOn(x, y)" />
+    <LaserOverlay v-if="laser && focusBoard" />
     <ButtonGroup v-if="isCanvas && !focusBoard" class="zoom rounded-lg border bg-card shadow-md" data-ui>
+      <Button v-if="canvasLevel" variant="ghost" size="icon-sm" aria-label="Command palette" title="Command palette (Ctrl K)" @click="emit('palette')"><Command /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Present" title="Present the whole canvas" @click="emit('present')"><Play class="size-3 fill-current" /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Zoom out" @click="zoomAt(1 / 1.2)"><Minus /></Button>
       <Button class="pct tabular-nums" variant="ghost" size="sm" title="Fit all (0)" @click="fit(true)">{{ Math.round(k * 100) }}%</Button>
@@ -906,6 +911,7 @@ watch(isCanvas, () => nextTick(() => fit()))
       <Button variant="ghost" size="icon-sm" class="rounded-full" aria-label="Previous board" :disabled="boards.length < 2" @click="step(-1)"><ArrowLeft /></Button>
       <span class="count">{{ focusIndex + 1 }} / {{ boards.length }} · {{ boards[focusIndex]?.title }}</span>
       <Button variant="ghost" size="icon-sm" class="rounded-full" aria-label="Next board" :disabled="boards.length < 2" @click="step(1)"><ArrowRight /></Button>
+      <Button v-if="presenting" class="rounded-full" :class="{ 'bg-white/20': laser }" variant="ghost" size="icon-sm" :aria-pressed="laser" aria-label="Laser pointer (L)" title="Laser pointer (L)" @click="laser = !laser"><Crosshair /></Button>
       <Button class="close rounded-full" variant="ghost" size="icon-sm" aria-label="Back to canvas (Esc)" title="Back to canvas (Esc)" @click="exitFocus"><X /></Button>
     </div>
   </div>
@@ -955,7 +961,7 @@ watch(isCanvas, () => nextTick(() => fit()))
 .pin.resolved { background: #8a8f98; opacity: .7; }
 .pin.draft { background: var(--brand); opacity: .85; pointer-events: none; }
 .zoom { position: absolute; right: 12px; bottom: 12px; width: fit-content; }
-.focusbar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: rgb(28 27 25 / .88); color: #fff; border-radius: 999px; padding: 4px; backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgb(0 0 0 / .35); max-width: calc(100% - 24px); opacity: .92; transition: opacity .2s; }
+.focusbar { z-index: 6; position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: rgb(28 27 25 / .88); color: #fff; border-radius: 999px; padding: 4px; backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgb(0 0 0 / .35); max-width: calc(100% - 24px); opacity: .92; transition: opacity .2s; }
 .focusbar:hover { opacity: 1; }
 .focusbar .count { padding: 0 10px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 </style>

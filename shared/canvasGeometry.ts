@@ -180,10 +180,10 @@ export function arrowPath(n: { kind: string, x: number, y: number, w: number, h:
   return { x1, y1, x2, y2, bw: Math.max(b.w, 1), bh: Math.max(b.h, 1), ang: Math.atan2(n.h, n.w) }
 }
 
-/** Pen stroke as an svg path, relative to the stroke's box. */
+/** Pen stroke as an svg path, relative to the stroke's box, drawn as a smooth curve through the stored points. */
 export function penPath(n: { kind: string, x: number, y: number, w: number, h: number, points: number[][] }) {
   const b = noteBox(n), ox = n.x - b.x, oy = n.y - b.y
-  return n.points.map((p, i) => `${i ? 'L' : 'M'}${p[0]! + ox},${p[1]! + oy}`).join(' ')
+  return smoothPath(n.points.map(p => [p[0]! + ox, p[1]! + oy]))
 }
 
 // ---- note geometry from stored data ---------------------------------------------------------------
@@ -355,4 +355,50 @@ export function noteHit(n: { kind: string, x: number, y: number, w: number, h: n
   }
   const b = noteBox(n)
   return p.x >= b.x - tol && p.x <= b.x + b.w + tol && p.y >= b.y - tol && p.y <= b.y + b.h + tol
+}
+
+// ---- pen smoothing --------------------------------------------------------------------------------------
+/** Ramer-Douglas-Peucker: drops points that lie within `eps` of the line between their neighbours; the ends always stay. */
+export function simplifyRDP(pts: number[][], eps: number): number[][] {
+  if (pts.length < 3) return pts.slice()
+  const keep = new Uint8Array(pts.length); keep[0] = 1; keep[pts.length - 1] = 1
+  const stack: [number, number][] = [[0, pts.length - 1]]
+  while (stack.length) {
+    const [a, b] = stack.pop()!
+    let dmax = 0, idx = -1
+    for (let i = a + 1; i < b; i++) {
+      const d = distToSegment({ x: pts[i]![0]!, y: pts[i]![1]! }, { x: pts[a]![0]!, y: pts[a]![1]! }, { x: pts[b]![0]!, y: pts[b]![1]! })
+      if (d > dmax) { dmax = d; idx = i }
+    }
+    if (idx >= 0 && dmax > eps) { keep[idx] = 1; stack.push([a, idx], [idx, b]) }
+  }
+  return pts.filter((_, i) => keep[i])
+}
+
+/** A committed stroke: simplified (shape kept, far fewer points) and always within `max` points. */
+export function fitPenPoints(pts: number[][], eps: number, max = 400): number[][] {
+  let out = simplifyRDP(pts, eps), e = eps
+  while (out.length > max) { e *= 1.5; out = simplifyRDP(pts, e) }
+  return out
+}
+
+/** A smooth curve through the points (Catmull-Rom turned into cubic Beziers). Two points make a straight line. */
+export function smoothPath(pts: number[][]): string {
+  if (!pts.length) return ''
+  const f = (n: number) => Math.round(n * 100) / 100
+  let d = `M${f(pts[0]![0]!)},${f(pts[0]![1]!)}`
+  if (pts.length < 3) return pts.slice(1).reduce((a, p) => `${a} L${f(p[0]!)},${f(p[1]!)}`, d)
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i]!, p1 = pts[i]!, p2 = pts[i + 1]!, p3 = pts[i + 2] ?? p2
+    d += ` C${f(p1[0]! + (p2[0]! - p0[0]!) / 6)},${f(p1[1]! + (p2[1]! - p0[1]!) / 6)} ${f(p2[0]! - (p3[0]! - p1[0]!) / 6)},${f(p2[1]! - (p3[1]! - p1[1]!) / 6)} ${f(p2[0]!)},${f(p2[1]!)}`
+  }
+  return d
+}
+
+// ---- minimap ----------------------------------------------------------------------------------------------
+/** The minimap shows when the content reaches outside the window (`view` and `size` as in the canvas). */
+export function contentOutside(content: Box | null, view: { tx: number, ty: number, k: number }, size: { w: number, h: number }): boolean {
+  if (!content) return false
+  const v: Box = { x: -view.tx / view.k, y: -view.ty / view.k, w: size.w / view.k, h: size.h / view.k }
+  return content.x < v.x - 1 || content.y < v.y - 1 || content.x + content.w > v.x + v.w + 1 || content.y + content.h > v.y + v.h + 1
 }

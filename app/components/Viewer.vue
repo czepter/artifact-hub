@@ -15,7 +15,8 @@ import { CONTAINER_TAGS, paletteHtml, type PaletteKind } from '#shared/palette'
 import { applyCanvasOps, mergeOps, type CanvasOp } from '#shared/canvasOps'
 import type { TreeNode } from './LayerTree.vue'
 
-import type { Tool } from '~/utils/canvasTools'
+import { TOOL_KEYS, TOOL_LABELS, TOOL_ORDER, type Tool } from '~/utils/canvasTools'
+import type { PaletteCommand } from '~/components/CanvasCommandPalette.vue'
 
 const props = defineProps<{ refId: string }>()
 
@@ -37,6 +38,9 @@ interface CanvasApi {
   boardAtPoint: (x: number, y: number) => { path: string, x: number, y: number } | null
   selectBoard: (path: string | null) => void
   selectNote: (id: string | null) => void
+  zoomToSelection: () => void
+  zoomAt: (factor: number) => void
+  fit: (animated?: boolean) => void
   align: (mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom') => void
   distribute: (axis: 'x' | 'y') => void
 }
@@ -72,6 +76,25 @@ const history = ref<{ paths: string[], toVersion: number }[]>([])
 const pending = new Map<string, Record<string, unknown>[]>()
 const tool = ref<Tool>('select')
 const toolLock = ref(false)
+const paletteOpen = ref(false)
+const keyOfTool = (t: Tool) => Object.entries(TOOL_KEYS).find(([, v]) => v === t)?.[0]?.toUpperCase()
+/** What Ctrl+K offers right now: tools and canvas actions while editing, view and panel commands always. */
+const paletteCommands = computed<PaletteCommand[]>(() => {
+  const c = canvasRef.value, canvas = hasBoards.value && !c?.focusBoard
+  const list: PaletteCommand[] = []
+  if (editMode.value && canvas) for (const t of TOOL_ORDER) list.push({ id: 'tool-' + t, group: 'Tools', label: TOOL_LABELS[t], shortcut: keyOfTool(t), run: () => (tool.value = t) })
+  if (canvas) list.push({ id: 'fit', group: 'View', label: 'Fit everything', shortcut: '0', run: () => c?.fit(true) }, { id: 'zin', group: 'View', label: 'Zoom in', shortcut: '+', run: () => c?.zoomAt(1.2) }, { id: 'zout', group: 'View', label: 'Zoom out', shortcut: '-', run: () => c?.zoomAt(1 / 1.2) })
+  if (editMode.value && canvas) list.push({ id: 'zsel', group: 'View', label: 'Zoom to selection', shortcut: 'Shift 2', run: () => c?.zoomToSelection() })
+  if (editMode.value && canvas) list.push({ id: 'addboard', group: 'Canvas', label: 'Add a board', run: () => addBoardAtEnd() }, { id: 'undo', group: 'Canvas', label: 'Undo', shortcut: 'Ctrl Z', run: () => void undo() })
+  list.push({ id: 'present', group: 'Canvas', label: 'Present', run: () => void present() })
+  list.push({ id: 'comments', group: 'Panels', label: sidebarOpen.value ? 'Hide comments' : 'Show comments', run: () => (sidebarOpen.value = !sidebarOpen.value) })
+  if (editMode.value) for (const [id, label] of [['props', 'Properties'], ['code', 'Code'], ['tweaks', 'Tweaks']] as const) list.push({ id: 'tab-' + id, group: 'Panels', label: `${label} panel`, run: () => (panelTab.value = id) })
+  return list
+})
+function addBoardAtEnd() {
+  const xs = Object.values(effectiveCanvas.value?.boards ?? {}).map((b: any) => (+b.x || 0) + (+b.w || 0))
+  onCanvasOp({ type: 'addBoard', title: 'Board', x: (xs.length ? Math.max(...xs) : 1280) + 120, y: 0, w: 1280, h: 800 })
+}
 watch(tool, () => (toolLock.value = false)) // picking any tool releases the lock
 // Dragging moves things freely by default; 'flow' makes a drag reorder elements inside the page flow instead.
 const dragMode = ref<'free' | 'flow'>('free')
@@ -86,7 +109,7 @@ const codeBusy = ref(false)
 const codeError = ref('')
 let canvasPending: CanvasOp[] = []
 /** Full batches set aside so the next one cannot push a save past the server's 200-operation limit. */
-const overflow: CanvasOp[][] = []
+const overflow: { ops: CanvasOp[], files?: { path: string, content: string }[] }[] = []
 let commitTimer: ReturnType<typeof setTimeout> | undefined
 let noteTimer: ReturnType<typeof setTimeout> | undefined
 let baseVersion = 0
@@ -145,7 +168,7 @@ function onEditOp(board: string, op: Record<string, unknown>) {
 }
 /** One user gesture = one call: the ops are applied to the preview together (all or none) and saved in one batch. */
 let lastMerge = ''
-function onCanvasOps(ops: CanvasOp[], merge = '') {
+function onCanvasOps(ops: CanvasOp[], merge = '', files?: { path: string, content: string }[]) {
   if (!ops.length) return
   if (ops.length > 200) { onEditNote('That is too many items for one change (200 at most). Select fewer.'); return }
   const base = canvasDraft.value ?? data.value?.canvas ?? null
@@ -156,8 +179,9 @@ function onCanvasOps(ops: CanvasOp[], merge = '') {
   // Each gesture is its own save and undo step; only repeats of the same kind (a held arrow key, a slider drag) fold together.
   const continues = !!merge && merge === lastMerge
   lastMerge = merge
-  if (canvasPending.length && !continues) { overflow.push(canvasPending); canvasPending = [] }
-  if (canvasPending.length + ops.length > 180) { overflow.push(canvasPending); canvasPending = []; void flush() }
+  if (canvasPending.length && !continues) { overflow.push({ ops: canvasPending }); canvasPending = [] }
+  if (canvasPending.length + ops.length > 180) { overflow.push({ ops: canvasPending }); canvasPending = []; void flush() }
+  if (files?.length) { overflow.push({ ops, files }); queueSave(true); return } // pictures travel with the operation that places them, as a save of their own
   canvasPending = mergeOps(canvasPending, ops)
   // Adding or removing a board changes files, so it is saved at once; everything else waits for a pause.
   queueSave(ops.some(op => op.type === 'addBoard' || op.type === 'removeBoard' || op.type === 'duplicateBoard'))
@@ -180,12 +204,12 @@ async function commitAll() {
   if (!id) return
   // 1. canvas-level edits (set-aside batches first, then what is pending now)
   while (overflow.length || canvasPending.length) {
-    const ops = overflow.shift() ?? canvasPending
-    if (ops === canvasPending) canvasPending = []
-    if (!ops.length) continue
+    const batch = overflow.shift() ?? { ops: canvasPending }
+    if (batch.ops === canvasPending) canvasPending = []
+    if (!batch.ops.length) continue
     editStatus.value = 'saving'
     try {
-      const r = await $fetch<{ version: number, removed: string[] }>(`/api/artifacts/${id}/canvas`, { method: 'POST', body: { baseVersion, ops } })
+      const r = await $fetch<{ version: number, removed: string[] }>(`/api/artifacts/${id}/canvas`, { method: 'POST', body: { baseVersion, ops: batch.ops, ...(batch.files ? { files: batch.files } : {}) } })
       history.value.push({ paths: ['canvas.json', ...r.removed], toVersion: baseVersion })
       baseVersion = r.version
       editStatus.value = 'saved'
@@ -771,6 +795,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         :edit-mode="editMode"
         :tool="tool"
         :tool-lock="toolLock"
+        :presenting="presenting"
         :drag-mode="dragMode"
         :selected-id="selectedId"
         :draft="draft"
@@ -792,6 +817,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         @canvas-select="(s) => (canvasSel = s)"
         @tool="(t) => (tool = t)"
         @tool-lock="(l) => (toolLock = l)"
+        @palette="paletteOpen = true"
         @play="playBoard"
         @present="present"
         @open-tweaks="onOpenTweaks"
@@ -907,6 +933,8 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>
+
+  <CanvasCommandPalette v-model:open="paletteOpen" :commands="paletteCommands" />
 
   <div v-if="dragGhost" class="ghost" :style="{ left: dragGhost.x + 'px', top: dragGhost.y + 'px' }" aria-hidden="true">{{ dragGhost.label }}</div>
 

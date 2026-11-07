@@ -42,14 +42,15 @@ The model reads and writes the shared scope with data_list, data_get, data_set, 
 
 ## Notes, shapes and tweaks in canvas.json
 \`notes\` entries beyond text: sticky {kind:'sticky',x,y,w,h,text,fill}, text {kind:'text',x,y,w,text,size,bold,color}, rect/oval {x,y,w,h,fill,color},
-line/arrow {x,y,w,h} (w and h may be negative: drawn from x,y to x+w,y+h), pen {x,y,points:[[dx,dy],…]}. fill is yellow, gray, red, orange, green, teal,
+line/arrow {x,y,w,h} (w and h may be negative: drawn from x,y to x+w,y+h), pen {x,y,points:[[dx,dy],…]} (drawn as a smooth curve),
+image {kind:'image',x,y,w,h,src:'assets/<first 16 hex of the file's sha-256>.png'} (the file must be in the artifact: png, jpg, webp or gif up to 5 MB; people paste or drop pictures on the canvas in the viewer). fill is yellow, gray, red, orange, green, teal,
 blue, purple, pink, none or a #rrggbb colour. A board entry may carry \`tweaks\`: {prop: value} for the levers a .dc.html board declares in data-props.
 
 Optional canvas fields (all validated; omit them for the defaults):
 - canvas \`noteOrder\`: ["n2","n1"] is the back-to-front stacking of notes. Without it notes stack in key order. \`order\` is unchanged: it is the present/focus sequence of boards.
 - note and board \`locked\`: true (cannot be moved, resized or marquee-selected in the viewer) and \`group\`: "g1" (items sharing a group id select together).
-- note styling: \`stroke\` (#rrggbb), \`strokeWidth\` (1-24), \`strokeStyle\` solid|dashed|dotted, \`fillStyle\` solid|hatch|cross, \`roundness\` sharp|round, and for line/arrow \`arrowStart\`/\`arrowEnd\` none|arrow|triangle|dot|bar.
-- arrow \`bind\`: {"start":{"type":"note","id":"n1"},"end":{"type":"board","id":"screens/Home.html"}} attaches an end to a note or board; the viewer draws the end at the target's edge and follows it when it moves. Targets must exist.
+- note styling: \`stroke\` (#rrggbb), \`strokeWidth\` (1-24), \`strokeStyle\` solid|dashed|dotted, \`fillStyle\` solid|hatch|cross (rect and oval with a fill: hatch and cross draw a sketch-style pattern), \`roundness\` sharp|round, and for line/arrow \`arrowStart\`/\`arrowEnd\` none|arrow|triangle|dot|bar.
+- arrow \`bind\`: {"start":{"type":"note","id":"n1"},"end":{"type":"board","id":"screens/Home.html"}} attaches an end to a note or board; the viewer draws the end at the target's edge and follows it when it moves. Only arrows can be bound, to boards, rect, oval, sticky and text; targets must exist. A rect or oval may carry \`text\` (shown centred).
 Limits: 1000 notes, 400 pen points per stroke, boards and notes at most 8000 px wide or high, 200 operations per edit.
 
 ## Visual editor

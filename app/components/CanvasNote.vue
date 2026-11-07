@@ -4,7 +4,8 @@ import { type NoteView, dashOf, headOf, radiusOf, strokeOf, widthOf } from '~/ut
 import { TEXT_PX, fillOf } from '~/utils/canvasStyle'
 
 // One note on the canvas: sticky, text, rectangle, oval, line, arrow or pen stroke. Drawing only: Canvas owns selection and gestures.
-const props = defineProps<{ n: NoteView, selected: boolean, editable: boolean, editing: boolean, hidden: boolean, erasing: boolean }>()
+const props = defineProps<{ n: NoteView, selected: boolean, editable: boolean, editing: boolean, hidden: boolean, erasing: boolean, imageSrc?: string }>()
+const imageSrc = computed(() => props.imageSrc ?? '')
 const emit = defineEmits<{ down: [e: PointerEvent], edit: [], commit: [text: string | null] }>()
 
 const box = computed(() => noteBox(props.n))
@@ -19,6 +20,10 @@ const heads = computed(() => (['start', 'end'] as const).map(end => ({
   type: headOf(props.n, end), x: end === 'start' ? a.value.x1 : a.value.x2, y: end === 'start' ? a.value.y1 : a.value.y2,
   rot: a.value.ang * 180 / Math.PI + (end === 'start' ? 180 : 0),
 })).filter(h => h.type !== 'none'))
+const hatched = computed(() => (props.n.fillStyle === 'hatch' || props.n.fillStyle === 'cross') && props.n.fill !== 'none')
+/** Sketch fill: parallel lines (hatch) or two crossing sets (cross) in the fill's colour, drawn as an svg pattern. */
+const patternId = computed(() => `hatch-${props.n.id}`)
+const shapeFill = computed(() => (hatched.value ? `url(#${patternId.value})` : fillOf(props.n.fill).bg))
 const labelled = computed(() => (props.n.kind === 'rect' || props.n.kind === 'oval') && (props.n.text || props.editing))
 
 /** Focus and select the text field once per edit session (the flag clears when editing ends, so the next edit focuses again). */
@@ -53,14 +58,23 @@ const done = (e: Event) => emit('commit', ((e.target as HTMLElement).innerText ?
     <div :ref="focusText" class="ntext" :contenteditable="editing" :data-placeholder="n.kind === 'sticky' ? 'Write a note…' : 'Text'" @blur="done" @keydown.stop="onKeys">{{ n.text }}</div>
   </div>
   <!-- shapes: svg, so a hollow rectangle only catches clicks on its outline -->
+  <div v-else-if="n.kind === 'image'" data-note :data-id="n.id" class="note image" :class="cls" :style="{ left: n.x + 'px', top: n.y + 'px', width: n.w + 'px', height: n.h + 'px', visibility: vis }" @pointerdown="emit('down', $event)">
+    <img :src="imageSrc" :alt="n.text || 'Image'" draggable="false">
+  </div>
   <svg
     v-else-if="n.kind === 'rect' || n.kind === 'oval'"
     data-note :data-id="n.id" class="note vec shape" :class="cls"
     :style="{ left: n.x + 'px', top: n.y + 'px', width: n.w + 'px', height: n.h + 'px', visibility: vis }"
     :viewBox="`0 0 ${n.w} ${n.h}`" overflow="visible" @pointerdown="emit('down', $event)" @dblclick.stop="emit('edit')"
   >
-    <rect v-if="n.kind === 'rect'" x="1" y="1" :width="Math.max(n.w - 2, 1)" :height="Math.max(n.h - 2, 1)" :rx="radiusOf(n)" :fill="fillOf(n.fill).bg" :stroke="col" :stroke-width="sw" :stroke-dasharray="dash" stroke-linecap="round" />
-    <ellipse v-else :cx="n.w / 2" :cy="n.h / 2" :rx="Math.max(n.w / 2 - 1, 1)" :ry="Math.max(n.h / 2 - 1, 1)" :fill="fillOf(n.fill).bg" :stroke="col" :stroke-width="sw" :stroke-dasharray="dash" stroke-linecap="round" />
+    <defs v-if="hatched">
+      <pattern :id="patternId" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="9" :stroke="fillOf(n.fill).bd" stroke-width="2" />
+        <line v-if="n.fillStyle === 'cross'" x1="0" y1="0" x2="9" y2="0" :stroke="fillOf(n.fill).bd" stroke-width="2" />
+      </pattern>
+    </defs>
+    <rect v-if="n.kind === 'rect'" x="1" y="1" :width="Math.max(n.w - 2, 1)" :height="Math.max(n.h - 2, 1)" :rx="radiusOf(n)" :fill="shapeFill" :stroke="col" :stroke-width="sw" :stroke-dasharray="dash" stroke-linecap="round" />
+    <ellipse v-else :cx="n.w / 2" :cy="n.h / 2" :rx="Math.max(n.w / 2 - 1, 1)" :ry="Math.max(n.h / 2 - 1, 1)" :fill="shapeFill" :stroke="col" :stroke-width="sw" :stroke-dasharray="dash" stroke-linecap="round" />
   </svg>
   <svg
     v-else-if="n.kind === 'line' || n.kind === 'arrow'"
@@ -103,6 +117,8 @@ const done = (e: Event) => emit('commit', ((e.target as HTMLElement).innerText ?
 .note { position: absolute; font-size: 14px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; pointer-events: none; }
 .note.editable { pointer-events: auto; cursor: move; }
 .note.erasing { opacity: .3; }
+.note.image { line-height: 0; }
+.note.image img { width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; pointer-events: none; }
 .note.locked.editable { cursor: default; }
 .note.vec.editable.locked :deep(line), .note.vec.editable.locked :deep(path), .note.vec.editable.locked :deep(polygon), .note.vec.editable.locked :deep(circle), .note.vec.editable.locked :deep(rect), .note.vec.editable.locked :deep(ellipse) { cursor: default; }
 .note.title1 { font-size: 40px; font-weight: 650; color: var(--fg); line-height: 1.15; }

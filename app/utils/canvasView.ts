@@ -4,7 +4,7 @@ import type { Bind } from '#shared/canvasOps'
 export interface NoteView {
   id: string, kind: string, x: number, y: number, w: number, h: number, text: string, fill: string, color: string, size: string, bold: boolean
   points: number[][], locked: boolean, group?: string
-  stroke?: string, strokeWidth?: number, strokeStyle?: string, roundness?: string, arrowStart?: string, arrowEnd?: string, bind?: Bind
+  src?: string, fillStyle?: string, stroke?: string, strokeWidth?: number, strokeStyle?: string, roundness?: string, arrowStart?: string, arrowEnd?: string, bind?: Bind
 }
 
 /** Stroke colour: the new `stroke` field, else the older `color`. */

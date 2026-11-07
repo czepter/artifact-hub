@@ -153,10 +153,10 @@ export function lockOps(items: Patchable[], locked: boolean): CanvasOp[] {
   return items.map(i => updateFor(i.key, { locked: locked ? true : null }))
 }
 
-export interface StyleChange { stroke?: string, strokeWidth?: number, strokeStyle?: string, fill?: string, roundness?: string, arrowStart?: string, arrowEnd?: string }
+export interface StyleChange { stroke?: string, strokeWidth?: number, strokeStyle?: string, fill?: string, fillStyle?: string, roundness?: string, arrowStart?: string, arrowEnd?: string }
 /** Which style fields apply to which kind of note. */
 export const STYLE_FIELDS: Record<string, (keyof StyleChange)[]> = {
-  rect: ['stroke', 'strokeWidth', 'strokeStyle', 'fill', 'roundness'], oval: ['stroke', 'strokeWidth', 'strokeStyle', 'fill'],
+  rect: ['stroke', 'strokeWidth', 'strokeStyle', 'fill', 'fillStyle', 'roundness'], oval: ['stroke', 'strokeWidth', 'strokeStyle', 'fill', 'fillStyle'],
   line: ['stroke', 'strokeWidth', 'strokeStyle', 'arrowStart', 'arrowEnd'], arrow: ['stroke', 'strokeWidth', 'strokeStyle', 'arrowStart', 'arrowEnd'], pen: ['stroke', 'strokeWidth', 'strokeStyle'],
 }
 /** One update per selected note for the style fields that apply to its kind; all of it is one batch. */

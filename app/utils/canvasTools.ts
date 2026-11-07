@@ -3,3 +3,4 @@ export type Tool = 'select' | 'hand' | 'text' | 'artboard' | 'sticky' | 'rect' |
 export const TOOL_ORDER = ['select', 'hand', 'text', 'artboard', 'sticky', 'rect', 'oval', 'arrow', 'pen', 'eraser'] as const satisfies readonly Tool[]
 /** Letter shortcuts. */
 export const TOOL_KEYS: Record<string, Tool> = { v: 'select', h: 'hand', t: 'text', a: 'artboard', s: 'sticky', r: 'rect', o: 'oval', l: 'arrow', p: 'pen', e: 'eraser' }
+export const TOOL_LABELS: Record<Tool, string> = { select: 'Select', hand: 'Hand (pan)', text: 'Text', artboard: 'Board', sticky: 'Sticky note', rect: 'Rectangle', oval: 'Oval', arrow: 'Arrow', line: 'Line', pen: 'Pen', eraser: 'Eraser' }

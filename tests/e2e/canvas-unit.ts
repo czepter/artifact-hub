@@ -1,6 +1,6 @@
 import { applyCanvasOps, CanvasError, emptyCanvas, mergeOps, orderedNoteIds, reorder, type CanvasOp } from '../../shared/canvasOps'
 import { detachBinds, groupKeys, groupOps, lockOps, styleOps, ungroupOps, clipBox, copyPayload, deleteOps, itemsFromCanvas, nudgeOps, overrideOps, pasteOps, patchOps, refOfKey } from '../../shared/canvasItemOps'
-import { bindTargetAt, boundEndpoint, noteHit, resolveArrow, alignPatches, boxesIntersect, constrainCreate, distributePatches, guidesFor, noteGeometry, normBox, snapBox, snapLines, arrowPath, fitView, itemBox, noteBox, penPath, scaleItems, moveEndpoint, toWorldPoint, unionBox, zoomView, type GeomItem } from '../../shared/canvasGeometry'
+import { contentOutside, fitPenPoints, simplifyRDP, smoothPath, bindTargetAt, boundEndpoint, noteHit, resolveArrow, alignPatches, boxesIntersect, constrainCreate, distributePatches, guidesFor, noteGeometry, normBox, snapBox, snapLines, arrowPath, fitView, itemBox, noteBox, penPath, scaleItems, moveEndpoint, toWorldPoint, unionBox, zoomView, type GeomItem } from '../../shared/canvasGeometry'
 import { applyEdits, getElementSource, EditError, ensureIds } from '../../server/utils/htmlEdit'
 let fails = 0
 const ok = (n: string, c: any, x: any = '') => { console.log(c ? 'PASS' : 'FAIL', n, c ? '' : JSON.stringify(x).slice(0, 300)); if (!c) fails++ }
@@ -122,6 +122,24 @@ ok('duplicateBoard copyTo names the copy; existing path 409; bad path 400', (() 
 }
 ok('resolveArrow: both ends on the same target stay as stored (no collapse)', (() => { const f = () => ({ type: 'note' as const, id: 'a', box: { x: 0, y: 0, w: 100, h: 100 }, shape: 'rect' as const }); const r = resolveArrow({ x: 10, y: 10, w: 30, h: 30 }, { start: { type: 'note', id: 'a' }, end: { type: 'note', id: 'a' } }, f); return r.w === 30 && r.h === 30 })())
 ok('detachBinds also writes the drawn size when it detaches', same(detachBinds([{ type: 'updateNote', id: 'ar', patch: { x: 5 } }], { ar: { kind: 'arrow', bind: { end: { type: 'note', id: 'a' } } } }, new Set(['n:ar']), () => ({ w: 99, h: -4 }))[0], { type: 'updateNote', id: 'ar', patch: { x: 5, w: 99, h: -4, bind: null } }))
+// ---- Phase 3
+ok('simplifyRDP keeps both ends, drops collinear points and keeps a corner', same(simplifyRDP([[0, 0], [5, 0], [10, 0], [10, 5], [10, 10]], 0.5), [[0, 0], [10, 0], [10, 10]]) && simplifyRDP([[1, 1]], 1).length === 1 && same(simplifyRDP([[0, 0], [3, 3]], 1), [[0, 0], [3, 3]]))
+ok('simplifyRDP: a jittery line collapses within the tolerance and keeps real turns', (() => { const line = Array.from({ length: 200 }, (_, i) => [i, (i % 2) * 0.4]); const r = simplifyRDP(line, 1); return r.length === 2 && simplifyRDP([[0, 0], [50, 40], [100, 0]], 1).length === 3 })())
+ok('fitPenPoints: a noisy 5000-point stroke ends within 400 points, ends kept', (() => { const pts = Array.from({ length: 5000 }, (_, i) => [i * 0.2, Math.sin(i / 40) * 60 + (i % 3)]); const r = fitPenPoints(pts, 0.5, 399); return r.length <= 399 && r.length > 20 && same(r[0], pts[0]) && same(r.at(-1), pts.at(-1)) })())
+ok('fitPenPoints: a short stroke is left as is', fitPenPoints([[0, 0], [10, 5], [20, 0]], 0.1).length === 3)
+ok('smoothPath: M then cubic segments through every point; two points are a line; empty is empty', (() => { const d = smoothPath([[0, 0], [10, 10], [20, 0], [30, 10]]); return d.startsWith('M0,0') && (d.match(/C/g) ?? []).length === 3 && d.endsWith('30,10') && smoothPath([[0, 0], [5, 5]]) === 'M0,0 L5,5' && smoothPath([]) === '' && smoothPath([[1, 2]]) === 'M1,2' })())
+ok('penPath is a smooth curve now', penPath({ kind: 'pen', x: 10, y: 10, w: 0, h: 0, points: [[0, 0], [20, 5], [40, 0]] }).includes('C'))
+ok('contentOutside: only when something reaches beyond the window', !contentOutside({ x: 0, y: 0, w: 100, h: 100 }, { tx: 0, ty: 0, k: 1 }, { w: 800, h: 600 }) && contentOutside({ x: 0, y: 0, w: 2000, h: 100 }, { tx: 0, ty: 0, k: 1 }, { w: 800, h: 600 }) && contentOutside({ x: -50, y: 0, w: 100, h: 100 }, { tx: 0, ty: 0, k: 1 }, { w: 800, h: 600 }) && !contentOutside(null, { tx: 0, ty: 0, k: 1 }, { w: 1, h: 1 }) && !contentOutside({ x: 100, y: 100, w: 100, h: 100 }, { tx: -50, ty: -50, k: 2 }, { w: 800, h: 600 }))
+ok('image notes need a valid asset path', (() => {
+  const r = applyCanvasOps(null, [], [{ type: 'addNote', id: 'im', note: { kind: 'image', src: 'assets/0123456789abcdef.png', x: 5, y: 6, w: 100, h: 60 } }]).canvas.notes.im
+  return r.kind === 'image' && r.src === 'assets/0123456789abcdef.png' && r.w === 100
+})())
+for (const [name, note] of [['no source', { kind: 'image', w: 10, h: 10 }], ['a path outside assets/', { kind: 'image', src: 'screens/a.png' }], ['a traversal', { kind: 'image', src: 'assets/../x.png' }], ['a wrong extension', { kind: 'image', src: 'assets/0123456789abcdef.svg' }], ['a short hash', { kind: 'image', src: 'assets/abc.png' }], ['a source on a rect', { kind: 'rect', src: 'assets/0123456789abcdef.png' }]] as const)
+  throws(`image: ${name} rejected`, () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: note as any }]), 400)
+ok('images move, scale (aspect kept by default for a single one) and copy like other notes', (() => {
+  const a = scaleItems([{ key: 'n:im', kind: 'image', x: 0, y: 0, w: 200, h: 100 }], { x: 0, y: 0, w: 200, h: 100 }, 'se', { dx: 100, dy: 0, keepAspect: true })
+  return same(a.patches['n:im'], { x: 0, y: 0, w: 300, h: 150 })
+})())
 // limits stay
 throws('more than 200 operations rejected', () => applyCanvasOps(null, [], Array.from({ length: 201 }, (_, i) => ({ type: 'addNote' as const, id: 'n' + i, note: {} }))), 413)
 throws('more than 1000 notes rejected', () => { let c: any = null; for (let i = 0; i < 6; i++) c = applyCanvasOps(c, [], Array.from({ length: 200 }, (_, j) => ({ type: 'addNote' as const, id: `n${i}_${j}`, note: {} }))).canvas }, 413)

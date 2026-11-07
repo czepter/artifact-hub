@@ -1,8 +1,11 @@
 // Canvas-level edits: boards, sticky notes, text, shapes. One pure function, used by the server (authoritative)
 // and by the viewer (optimistic preview), so both always agree on the result.
 
-export type NoteKind = 'sticky' | 'text' | 'rect' | 'oval' | 'line' | 'arrow' | 'pen'
-export const NOTE_KINDS: NoteKind[] = ['sticky', 'text', 'rect', 'oval', 'line', 'arrow', 'pen']
+export type NoteKind = 'sticky' | 'text' | 'rect' | 'oval' | 'line' | 'arrow' | 'pen' | 'image'
+export const NOTE_KINDS: NoteKind[] = ['sticky', 'text', 'rect', 'oval', 'line', 'arrow', 'pen', 'image']
+/** Images live in the artifact as `assets/<first 16 hex of the sha-256>.<ext>`. */
+export const ASSET_PATH = /^assets\/[a-f0-9]{16}\.(png|jpe?g|webp|gif)$/
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 export const FILLS = ['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'none']
 
 export const STROKE_STYLES = ['solid', 'dashed', 'dotted'] as const
@@ -15,7 +18,7 @@ export type Bind = { start?: BindTarget | null, end?: BindTarget | null }
 export interface BoardPatch { x?: number, y?: number, w?: number, h?: number, title?: string, is_interactive?: boolean, expand?: string | null, tweaks?: Record<string, unknown> | null, locked?: boolean | null, group?: string | null }
 /** Fields that are `null` in a patch are cleared (removed from the stored note). */
 export interface NoteInput {
-  kind?: NoteKind, x?: number, y?: number, w?: number, h?: number, text?: string, fill?: string, color?: string, size?: string, bold?: boolean, points?: number[][]
+  kind?: NoteKind, src?: string, x?: number, y?: number, w?: number, h?: number, text?: string, fill?: string, color?: string, size?: string, bold?: boolean, points?: number[][]
   locked?: boolean | null, group?: string | null, stroke?: string | null, strokeWidth?: number | null, strokeStyle?: (typeof STROKE_STYLES)[number] | null
   fillStyle?: (typeof FILL_STYLES)[number] | null, roundness?: (typeof ROUNDNESS)[number] | null
   arrowStart?: (typeof ARROWHEADS)[number] | null, arrowEnd?: (typeof ARROWHEADS)[number] | null, bind?: Bind | null
@@ -66,6 +69,7 @@ function cleanNote(n: NoteInput, base: Record<string, unknown> = {}): Record<str
   // Only lines and arrows are drawn from a start to an end point, so only they may have negative extents.
   const directed = (n.kind ?? base.kind) === 'line' || (n.kind ?? base.kind) === 'arrow'
   for (const k of ['w', 'h'] as const) if (n[k] !== undefined) out[k] = clamp(n[k], directed ? -8000 : 8, 8000, k)
+  if (n.src !== undefined) { if (typeof n.src !== 'string' || !ASSET_PATH.test(n.src)) throw new CanvasError(400, 'Invalid image source'); out.src = n.src }
   if (n.text !== undefined) { if (typeof n.text !== 'string' || n.text.length > 2000) throw new CanvasError(400, 'Note text is too long'); out.text = n.text }
   if (n.fill !== undefined) { if (!FILLS.includes(n.fill) && !/^#[0-9a-f]{6}$/i.test(n.fill)) throw new CanvasError(400, 'Invalid fill'); out.fill = n.fill }
   if (n.color !== undefined) { if (!/^#[0-9a-f]{6}$/i.test(n.color)) throw new CanvasError(400, 'Invalid colour'); out.color = n.color }
@@ -240,6 +244,8 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         if (typeof op.id !== 'string' || !ID.test(op.id) || canvas.notes[op.id]) throw new CanvasError(400, 'Invalid or duplicate note id')
         if (Object.keys(canvas.notes).length >= 1000) throw new CanvasError(413, 'Too many notes')
         const clean = cleanNote(op.note ?? {})
+        if (clean.kind === 'image' && !clean.src) throw new CanvasError(400, 'An image needs a source')
+        if (clean.kind !== 'image' && clean.src) throw new CanvasError(400, 'Only images have a source')
         checkBind(canvas, op.id, clean)
         canvas.notes[op.id] = clean
         if (Array.isArray(canvas.noteOrder)) canvas.noteOrder = [...orderedNoteIds(canvas).filter(i => i !== op.id), op.id]
