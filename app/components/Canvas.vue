@@ -316,7 +316,7 @@ function onPointerUp(e: PointerEvent) {
     if (d.pts.length > 2) {
       const x0 = Math.min(...d.pts.map(p => p[0]!)), y0 = Math.min(...d.pts.map(p => p[1]!))
       // Thin the stroke to at most 400 points before it is stored.
-      const step = Math.max(1, Math.ceil(d.pts.length / 400))
+      const step = Math.max(1, Math.ceil(d.pts.length / 399)) // 399 + the last point stays within the 400-point limit
       const pts = d.pts.filter((_, i) => i % step === 0 || i === d.pts.length - 1).map(p => [p[0]! - x0, p[1]! - y0])
       const id = uid()
       send({ type: 'addNote', id, note: { kind: 'pen', x: round(x0), y: round(y0), points: pts, color: '#1c1b19' } })

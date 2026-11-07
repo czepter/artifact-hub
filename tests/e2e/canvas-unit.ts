@@ -92,6 +92,8 @@ throws('duplicateBoard of an unknown board -> 404', () => applyCanvasOps(dc, [],
 ok('duplicating a copy does not stack -copy-copy', applyCanvasOps(dr.canvas, ['screens/Home-copy.html'], [{ type: 'duplicateBoard', path: 'screens/Home-copy.html' }]).copyFiles[0]!.to === 'screens/Home-copy-3.html')
 ok('duplicateBoard drops locked and group on the copy', (() => { const c = JSON.parse(JSON.stringify(dc)); c.boards['screens/Home.html'].locked = true; c.boards['screens/Home.html'].group = 'g'; const b = applyCanvasOps(c, [], [{ type: 'duplicateBoard', path: 'screens/Home.html' }]).canvas.boards['screens/Home-copy.html']; return !b.locked && !b.group })())
 
+throws('bind to a prototype key is not a target', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { kind: 'arrow', bind: { end: { type: 'board', id: 'constructor' } } } }]), 400)
+throws('reorderNotes with a prototype key -> 404', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: {} }, { type: 'reorderNotes', ids: ['constructor'], mode: 'front' }]), 404)
 // limits stay
 throws('more than 200 operations rejected', () => applyCanvasOps(null, [], Array.from({ length: 201 }, (_, i) => ({ type: 'addNote' as const, id: 'n' + i, note: {} }))), 413)
 throws('more than 1000 notes rejected', () => { let c: any = null; for (let i = 0; i < 6; i++) c = applyCanvasOps(c, [], Array.from({ length: 200 }, (_, j) => ({ type: 'addNote' as const, id: `n${i}_${j}`, note: {} }))).canvas }, 413)

@@ -156,7 +156,7 @@ function checkBind(canvas: Canvas, selfId: string | null, note: Record<string, u
   for (const end of ['start', 'end'] as const) {
     const t = b[end]
     if (!t) continue
-    const exists = t.type === 'board' ? !!canvas.boards[t.id] : !!canvas.notes[t.id]
+    const exists = Object.hasOwn(t.type === 'board' ? canvas.boards : canvas.notes, t.id)
     if (!exists || (t.type === 'note' && t.id === selfId)) throw new CanvasError(400, `Cannot bind to ${t.type} ${t.id}`)
   }
 }
@@ -261,7 +261,7 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
       case 'reorderNotes': {
         if (!Array.isArray(op.ids) || !op.ids.length || op.ids.length > 1000 || !op.ids.every(i => typeof i === 'string')) throw new CanvasError(400, 'Invalid note ids')
         if (!['front', 'back', 'forward', 'backward'].includes(op.mode)) throw new CanvasError(400, 'Invalid reorder mode')
-        for (const id of op.ids) if (!canvas.notes[id]) throw new CanvasError(404, `No such note: ${id}`)
+        for (const id of op.ids) if (!Object.hasOwn(canvas.notes, id)) throw new CanvasError(404, `No such note: ${id}`)
         canvas.noteOrder = reorder(orderedNoteIds(canvas), op.ids, op.mode)
         break
       }
