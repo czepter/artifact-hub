@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { Comment, ViewData, Anchor } from '~/types'
 import { orderedNoteIds, type Canvas as CanvasT, type CanvasOp } from '#shared/canvasOps'
-import { type AlignMode, type Box, type GeomItem, HANDLES, alignPatches, arrowPath, distributePatches, boxesIntersect, constrainCreate, isDirected, itemBox, noteBox, normBox, penPath, round1 } from '#shared/canvasGeometry'
-import { deleteOps, nudgeOps, patchOps } from '#shared/canvasItemOps'
+import { type AlignMode, type BindTargetBox, type Box, type GeomItem, HANDLES, alignPatches, bindTargetAt, distributePatches, boxesIntersect, constrainCreate, isDirected, itemBox, noteBox, noteGeometry, noteHit, normBox, resolveArrow, round1 } from '#shared/canvasGeometry'
+import { deleteOps, detachBinds, groupKeys, groupOps, lockOps, nudgeOps, patchOps, ungroupOps } from '#shared/canvasItemOps'
+import type { NoteView } from '~/utils/canvasView'
 import type { SelRef } from '~/composables/useCanvasSelection'
 
 import { ArrowLeft, ArrowRight, Maximize2, Minus, Play, Plus, X } from '@lucide/vue'
@@ -54,8 +55,7 @@ const emit = defineEmits<{
   exportBoard: [path: string]
 }>()
 
-interface BoardView { path: string, x: number, y: number, w: number, h: number, title: string, interactive: boolean, expand: string, src: string, locked: boolean }
-interface NoteView { id: string, kind: string, x: number, y: number, w: number, h: number, text: string, fill: string, color: string, size: string, bold: boolean, points: number[][], locked: boolean }
+interface BoardView { group?: string, path: string, x: number, y: number, w: number, h: number, title: string, interactive: boolean, expand: string, src: string, locked: boolean }
 type Ov = { x: number, y: number, w: number, h: number, points: number[][] }
 
 const viewport = ref<HTMLElement>()
@@ -73,6 +73,8 @@ const frozenSrc = ref<Record<string, string> | null>(null)
 const boardOv = reactive<Record<string, Partial<Ov>>>({})
 const noteOv = reactive<Record<string, Partial<Ov>>>({})
 const marquee = ref<Box | null>(null)
+/** Notes the eraser has passed over; they are deleted together when the pointer is released. */
+const erased = ref<string[]>([])
 const spaceHeld = ref(false)
 let lastClient: { x: number, y: number } | null = null // pointer over the canvas, for paste; cleared when it leaves
 const creating = ref<{ tool: Tool, x: number, y: number, w: number, h: number, pts?: number[][] } | null>(null)
@@ -96,7 +98,7 @@ const boards = computed<BoardView[]>(() => {
     const rest = Object.keys(c.boards).filter(p => !order.includes(p))
     return [...order, ...rest].filter(p => c.boards[p] && revOf.value[p] !== undefined).map((p) => {
       const b = c.boards[p], o = boardOv[p] ?? {}
-      return { path: p, x: o.x ?? (+b.x || 0), y: o.y ?? (+b.y || 0), w: o.w ?? (+b.w || 800), h: o.h ?? (+b.h || 600), title: b.title || p, interactive: !!b.is_interactive, expand: b.expand || '', src: src(p), locked: !!b.locked }
+      return { path: p, x: o.x ?? (+b.x || 0), y: o.y ?? (+b.y || 0), w: o.w ?? (+b.w || 800), h: o.h ?? (+b.h || 600), title: b.title || p, interactive: !!b.is_interactive, expand: b.expand || '', src: src(p), locked: !!b.locked, group: b.group }
     })
   }
   return [{ path: 'index.html', x: 0, y: 0, w: size.w, h: size.h, title: '', interactive: true, expand: 'fill', src: src('index.html'), locked: false }]
@@ -108,25 +110,34 @@ function dims(b: BoardView) {
 }
 
 
-const notes = computed<NoteView[]>(() => {
+const { heights: noteH, measure: measureNotes } = useNoteHeights(viewport)
+
+const rawNotes = computed<NoteView[]>(() => {
   const n = cv.value?.notes ?? {}
   // Back to front: `noteOrder` when the canvas has one, else the order the notes are stored in.
-  return orderedNoteIds({ notes: n, noteOrder: cv.value?.noteOrder }).map(id => [id, n[id]] as [string, any]).map(([id, v]) => {
-    const o = noteOv[id] ?? {}
-    const kind = v.kind ?? 'sticky'
-    return { id, kind, x: o.x ?? (+v.x || 0), y: o.y ?? (+v.y || 0), w: o.w ?? (v.w !== undefined ? +v.w : (kind === 'sticky' ? 240 : 360)), h: o.h ?? (+v.h || 0), text: String(v.text ?? ''), fill: v.fill ?? (kind === 'sticky' ? 'yellow' : 'none'), color: v.color ?? '#1c1b19', size: v.size ?? 'm', bold: !!v.bold, points: o.points ?? (Array.isArray(v.points) ? v.points : []), locked: !!v.locked }
+  return orderedNoteIds({ notes: n, noteOrder: cv.value?.noteOrder }).map((id) => {
+    const v = n[id], o = noteOv[id] ?? {}, g = noteGeometry(v), kind = g.kind
+    return { id, kind, x: o.x ?? g.x, y: o.y ?? g.y, w: o.w ?? g.w, h: o.h ?? g.h, text: String(v.text ?? ''), fill: v.fill ?? (kind === 'sticky' ? 'yellow' : 'none'), color: v.color ?? '#1c1b19', size: v.size ?? 'm', bold: !!v.bold, points: o.points ?? g.points, locked: !!v.locked, group: v.group, stroke: v.stroke, strokeWidth: v.strokeWidth, strokeStyle: v.strokeStyle, roundness: v.roundness, arrowStart: v.arrowStart, arrowEnd: v.arrowEnd, bind: v.bind }
   })
 })
-
-const { heights: noteH, measure: measureNotes } = useNoteHeights(viewport)
+/** What an arrow can attach to: boards, rectangles, ovals, sticky notes and text, back to front. */
+const bindTargets = computed<BindTargetBox[]>(() => [
+  ...boards.value.map(b => ({ type: 'board' as const, id: b.path, box: { x: b.x, y: b.y, w: b.w, h: b.h }, shape: 'rect' as const })),
+  ...rawNotes.value.filter(r => ['rect', 'oval', 'sticky', 'text'].includes(r.kind)).map(r => ({ type: 'note' as const, id: r.id, box: { x: r.x, y: r.y, w: r.w, h: noteH[r.id] ?? (r.h || noteBox(r).h) }, shape: (r.kind === 'oval' ? 'oval' : 'rect') as 'oval' | 'rect' })),
+])
+/** Bound arrows are drawn from where their targets are now (unless being dragged), so moving a target needs no operation. */
+const notes = computed<NoteView[]>(() => {
+  const by = new Map(bindTargets.value.map(t => [t.type + ':' + t.id, t]))
+  return rawNotes.value.map(r => (r.bind && isDirected(r.kind) && !noteOv[r.id] ? { ...r, ...resolveArrow(r, r.bind, t => by.get(t.type + ':' + t.id) ?? null) } : r))
+})
 
 /** Everything selectable, with its geometry as shown right now (live drag overrides included). */
 const allItems = computed<GeomItem[]>(() => [
-  ...boards.value.map(b => ({ key: boardKey(b.path), kind: 'board', x: b.x, y: b.y, w: b.w, h: b.h, locked: b.locked })),
-  ...notes.value.map(n => ({ key: noteKey(n.id), kind: n.kind, x: n.x, y: n.y, w: n.w, h: isDirected(n.kind) ? n.h : (noteH[n.id] ?? (n.h || noteBox(n).h)), points: n.points, locked: n.locked })),
+  ...boards.value.map(b => ({ key: boardKey(b.path), kind: 'board', x: b.x, y: b.y, w: b.w, h: b.h, locked: b.locked, group: b.group })),
+  ...notes.value.map(n => ({ key: noteKey(n.id), kind: n.kind, x: n.x, y: n.y, w: n.w, h: isDirected(n.kind) ? n.h : (noteH[n.id] ?? (n.h || noteBox(n).h)), points: n.points, locked: n.locked, group: n.group })),
 ])
 const selection = useCanvasSelection(allItems)
-const gestures = useCanvasGestures(selection, boardOv, noteOv, k, () => allItems.value.filter(i => !selection.has(i.key)).map(itemBox))
+const gestures = useCanvasGestures(selection, boardOv, noteOv, k, () => allItems.value.filter(i => !selection.has(i.key)).map(itemBox), { targets: () => bindTargets.value, bindOf: id => cv.value?.notes?.[id]?.bind })
 const selectedBoard = computed(() => selection.refs.value.find(r => r.type === 'board')?.id ?? null)
 
 // ---- view transform --------------------------------------------------------------------------
@@ -190,8 +201,10 @@ function navKeys(enabled: boolean) {
 // ---- selection ---------------------------------------------------------------------------------
 watch(() => notes.value.map(n => n.id).join(), () => nextTick(measureNotes), { flush: 'post' }) // only when the set of notes changes, not on every drag frame
 watch(() => (canvasLevel.value ? selection.refs.value : []), v => emit('canvasSelect', v), { deep: true })
-function selectBoard(path: string | null) { selection.only(path ? boardKey(path) : null) }
-function selectNote(id: string | null) { selection.only(id ? noteKey(id) : null) }
+// Clicking something that is in a group selects the whole group.
+const selectKey = (key: string | null) => selection.set(key ? groupKeys(allItems.value, key) : [])
+function selectBoard(path: string | null) { selectKey(path ? boardKey(path) : null) }
+function selectNote(id: string | null) { selectKey(id ? noteKey(id) : null) }
 
 // ---- pointer / keyboard ----------------------------------------------------------------------
 function onWheel(e: WheelEvent) {
@@ -212,6 +225,7 @@ type Drag =
   | { kind: 'pen', pts: number[][], moved: boolean }
   | { kind: 'marquee', sx: number, sy: number, additive: boolean, moved: boolean }
   /** Shift pressed on a board: a click toggles it in the selection, a drag becomes an additive marquee. */
+  | { kind: 'erase', last: { x: number, y: number } }
   | { kind: 'shiftpress', key: string, x: number, y: number, additive: boolean, moved: boolean }
 let drag: Drag | null = null
 let justDragged = false
@@ -221,10 +235,12 @@ const round = round1
 const send = (...ops: CanvasOp[]) => { if (ops.length) emit('canvasOps', ops) }
 /** Arrow-key nudges: repeats of the key fold into the same save and undo step. */
 const sendNudge = (...ops: CanvasOp[]) => { if (ops.length) emit('canvasOps', ops, 'nudge') }
+/** Moves and resizes: arrows moved without their targets come loose from them. */
+const sendMove = (ops: CanvasOp[]) => send(...detachBinds(ops, cv.value?.notes, new Set(selection.keys.value)))
 
 function capture(e: PointerEvent) { try { viewport.value!.setPointerCapture(e.pointerId) } catch {} }
 
-const creationTool = computed(() => canvasLevel.value && props.tool !== 'select' && props.tool !== 'hand')
+const creationTool = computed(() => canvasLevel.value && props.tool !== 'select' && props.tool !== 'hand' && props.tool !== 'eraser')
 
 function onPointerDown(e: PointerEvent) {
   if (!isCanvas.value || focusBoard.value || (e.button !== 0 && e.button !== 1)) return
@@ -232,7 +248,7 @@ function onPointerDown(e: PointerEvent) {
   // The toolbar, zoom pill and rename field always take their own presses; board header icons only yield to a drawing tool.
   if (t.closest('.zoom, .focusbar, [data-toolbar], .rename') || (!creationTool.value && t.closest('[data-ui]'))) return
   if (!t.closest('[contenteditable="true"], input, textarea')) e.preventDefault()
-  if (canvasLevel.value && e.button === 0 && props.tool !== 'select' && props.tool !== 'hand' && !spaceHeld.value) {
+  if (canvasLevel.value && e.button === 0 && props.tool !== 'select' && props.tool !== 'hand' && props.tool !== 'eraser' && !spaceHeld.value) {
     // Creation tools: a drag draws the shape, a click drops a default-sized one.
     const w = toWorld(e.clientX, e.clientY)
     drag = props.tool === 'pen' ? { kind: 'pen', pts: [[w.x, w.y]], moved: false } : { kind: 'create', tool: props.tool, sx: w.x, sy: w.y, moved: false }
@@ -241,6 +257,12 @@ function onPointerDown(e: PointerEvent) {
     return
   }
   // Space held: the press pans, even over boards and notes.
+  if (canvasLevel.value && e.button === 0 && props.tool === 'eraser' && !spaceHeld.value) {
+    const w = toWorld(e.clientX, e.clientY)
+    drag = { kind: 'erase', last: w }; erased.value = []; eraseAt(w, w)
+    capture(e)
+    return
+  }
   // On empty canvas (Select tool) a drag draws a selection rectangle; the Hand tool, Space and the middle button pan.
   if (canvasLevel.value && e.button === 0 && props.tool === 'select' && !spaceHeld.value) {
     const w = toWorld(e.clientX, e.clientY)
@@ -251,6 +273,16 @@ function onPointerDown(e: PointerEvent) {
 }
 
 function onShieldClick(e: MouseEvent, b: BoardView) { if (!justDragged && !e.shiftKey) selectBoard(b.path) }
+
+/** Marks the notes under the line from `a` to `b` (checked every few px so a fast stroke skips nothing). Boards are never erased. */
+function eraseAt(a: { x: number, y: number }, b: { x: number, y: number }) {
+  const tol = 5 / k.value, steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * k.value / 5)), hit = new Set(erased.value)
+  for (let i = 0; i <= steps; i++) {
+    const p = { x: a.x + (b.x - a.x) * i / steps, y: a.y + (b.y - a.y) * i / steps }
+    for (const n of notes.value) if (!n.locked && noteHit(n, p, tol)) hit.add(n.id)
+  }
+  if (hit.size !== erased.value.length) erased.value = [...hit]
+}
 
 function onBoardDown(e: PointerEvent, b: BoardView) {
   if (!canvasLevel.value || props.tool !== 'select' || e.button !== 0 || spaceHeld.value) return
@@ -281,6 +313,7 @@ function onPointerMove(e: PointerEvent) {
     creating.value = { tool: d.tool, ...constrainCreate(lined ? 'line' : 'box', { x: d.sx, y: d.sy }, w, { shift: e.shiftKey, alt: e.altKey }) }
     return
   }
+  if (d.kind === 'erase') { const w = toWorld(e.clientX, e.clientY); eraseAt(d.last, w); d.last = w; return }
   if (d.kind === 'marquee' || d.kind === 'shiftpress') {
     const w = toWorld(e.clientX, e.clientY)
     if (d.kind === 'shiftpress') {
@@ -326,7 +359,12 @@ function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeo
       nextTick(() => { selectNote(id); editingNote.value = id })
     } else if (tool === 'arrow' || tool === 'line') {
       const w = d.moved ? c.w : 160, h = d.moved ? c.h : 0
-      send({ type: 'addNote', id, note: { kind: tool, x: round(d.moved ? c.x : d.sx), y: round(d.moved ? c.y : d.sy), w: round(w), h: round(h) } })
+      const x = round(d.moved ? c.x : d.sx), y = round(d.moved ? c.y : d.sy)
+      // An arrow drawn from or to a board or note attaches to it.
+      const tol = 8 / k.value, a = d.moved ? bindTargetAt({ x, y }, bindTargets.value, tol) : null, z = d.moved ? bindTargetAt({ x: x + w, y: y + h }, bindTargets.value, tol) : null
+      const ref = (t: BindTargetBox | null) => (t && tool === 'arrow' ? { type: t.type, id: t.id } : undefined)
+      const bind = ref(a) || ref(z) ? { ...(ref(a) ? { start: ref(a) } : {}), ...(ref(z) ? { end: ref(z) } : {}) } : undefined
+      send({ type: 'addNote', id, note: { kind: tool, x, y, w: round(w), h: round(h), ...(bind ? { bind } : {}) } })
       nextTick(() => selectNote(id))
     } else {
       const w = d.moved && c.w > 8 && c.h > 8 ? c.w : 160, h = d.moved && c.w > 8 && c.h > 8 ? c.h : 100
@@ -346,8 +384,15 @@ function onPointerUp(e: PointerEvent) {
   if (done.moved) { // move, resize and endpoint drags end the same way: every live override goes out as one batch
     justDragged = true; setTimeout(() => (justDragged = false), 0)
     if (done.clone) board_.cloneBy(done.clone) // Alt-drag: copies land where the drag ended
-    else send(...done.ops)
+    else if (done.kind === 'endpoint') send(...done.ops)
+    else sendMove(done.ops)
     nextTick(done.clear)
+    return
+  }
+  if (d?.kind === 'erase') {
+    const ids = erased.value; erased.value = []
+    justDragged = true; setTimeout(() => (justDragged = false), 0)
+    send(...ids.map(id => ({ type: 'deleteNote', id }) as CanvasOp)) // one stroke, one undo step
     return
   }
   if (d?.kind === 'shiftpress') { selection.toggle(d.key); justDragged = true; setTimeout(() => (justDragged = false), 0); return } // the click that follows must not reselect
@@ -357,7 +402,8 @@ function onPointerUp(e: PointerEvent) {
     if (d.moved && box) {
       justDragged = true; setTimeout(() => (justDragged = false), 0)
       const hits = allItems.value.filter(i => !i.locked && boxesIntersect(itemBox(i), box)).map(i => i.key) // locked items are not marquee-selected
-      selection.set(d.additive ? [...selection.keys.value, ...hits] : hits)
+      const withGroups = [...new Set(hits.flatMap(k => groupKeys(allItems.value, k)))] // a group is selected whole
+      selection.set(d.additive ? [...selection.keys.value, ...withGroups] : withGroups)
     }
     return
   }
@@ -390,23 +436,20 @@ function onViewportClick(e: MouseEvent) {
 }
 
 // Notes: text editing, board rename
-function startNoteEdit(n: NoteView) { if (canvasLevel.value && (n.kind === 'sticky' || n.kind === 'text')) { selectNote(n.id); editingNote.value = n.id } }
-function commitNoteEdit(n: NoteView, e: Event | null, cancel = false) {
+/** Double-click: text notes and shapes edit their text. Inside a group it first selects just that member. */
+function startNoteEdit(n: NoteView) {
+  if (!canvasLevel.value) return
+  if (n.group && selection.count.value > 1) { selection.only(noteKey(n.id)); return }
+  if (['sticky', 'text', 'rect', 'oval'].includes(n.kind)) { selectNote(n.id); editingNote.value = n.id }
+}
+/** Text edit finished (`text` null: cancelled). Only an empty new sticky or text note is dropped; an empty shape stays. */
+function commitNoteEdit(n: NoteView, text: string | null) {
   if (editingNote.value !== n.id) return
   editingNote.value = null
-  const el = e?.target as HTMLElement | undefined
-  const text = (el?.innerText ?? n.text).replace(/\n$/, '')
-  const empty = !cancel && !text.trim() && !n.text.trim() // an empty new note is not kept
-  if (!cancel && text !== n.text) send({ type: 'updateNote', id: n.id, patch: { text } }, ...(empty ? [{ type: 'deleteNote', id: n.id } as CanvasOp] : []))
+  const empty = text !== null && !text.trim() && !n.text.trim() && (n.kind === 'sticky' || n.kind === 'text')
+  if (text !== null && text !== n.text) send({ type: 'updateNote', id: n.id, patch: { text } }, ...(empty ? [{ type: 'deleteNote', id: n.id } as CanvasOp] : []))
   else if (empty) send({ type: 'deleteNote', id: n.id })
 }
-// Focus the text field once per edit session (the flag is cleared when editing ends, so the next edit focuses again).
-function noteRef(el: unknown, id: string) {
-  const h = el as HTMLElement | null
-  if (!h) return
-  if (editingNote.value === id) { if (h.dataset.f !== '1') { h.dataset.f = '1'; nextTick(() => focusEl(h)) } } else delete h.dataset.f
-}
-function focusEl(el: unknown) { const n = el as HTMLElement | null; if (n) { n.focus(); const r = document.createRange(); r.selectNodeContents(n); const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r) } }
 function startRename(b: BoardView) { if (canvasLevel.value) { selectBoard(b.path); renamingBoard.value = b.path } }
 function commitRename(b: BoardView, v: string | null) { // null: cancelled
   if (renamingBoard.value !== b.path) return
@@ -438,6 +481,8 @@ function handleMod(k: KeyInfo): boolean {
   const c = k.code
   if (k.alt) return false
   if (c === 'KeyA' && !k.shift) { selection.selectAll(); return true }
+  if (c === 'KeyG') return k.shift ? ungroupSelection() : groupSelection()
+  if (c === 'KeyL' && k.shift) return toggleLock()
   if (c === 'KeyC' && !k.shift) return board_.copy()
   if (c === 'KeyV' && !k.shift) return board_.pasteAtPointer()
   if (c === 'KeyD' && !k.shift) return board_.duplicate()
@@ -445,11 +490,33 @@ function handleMod(k: KeyInfo): boolean {
   return false
 }
 
+// ---- group and lock ---------------------------------------------------------------------------------
+function groupSelection() {
+  const items = selection.selected.value.filter(i => !i.locked)
+  if (items.length < 2) return false
+  send(...groupOps(items, 'g' + uid().slice(2)))
+  return true
+}
+function ungroupSelection() {
+  const ops = ungroupOps(selection.selected.value.filter(i => !i.locked))
+  send(...ops)
+  return ops.length > 0
+}
+/** Locks the selection, or unlocks it when everything selected is already locked. */
+function toggleLock() {
+  const items = selection.selected.value
+  if (!items.length) return false
+  send(...lockOps(items, items.some(i => !i.locked)))
+  return true
+}
+const selectionLocked = computed(() => selection.count.value > 0 && selection.selected.value.every(i => i.locked))
+const selectionGrouped = computed(() => selection.selected.value.some(i => i.group))
+
 // ---- copy, paste, duplicate, z-order ---------------------------------------------------------------
 const board_ = useCanvasClipboard({ canvas: () => cv.value, selection, send, newId: uid, pointer: () => (lastClient ? toWorld(lastClient.x, lastClient.y) : null) })
 /** Align or distribute the selection (from the side panel). */
-const align = (mode: AlignMode) => send(...patchOps(alignPatches(selection.selected.value, mode)))
-const distribute = (axis: 'x' | 'y') => send(...patchOps(distributePatches(selection.selected.value, axis)))
+const align = (mode: AlignMode) => sendMove(patchOps(alignPatches(selection.selected.value, mode)))
+const distribute = (axis: 'x' | 'y') => sendMove(patchOps(distributePatches(selection.selected.value, axis)))
 function zoomToSelection() {
   const b = selection.bbox.value
   if (b) view_.fitTo([b], true, 2)
@@ -476,7 +543,7 @@ function handleKey(input: string | KeyInfo) {
     if (k.shift && k.code === 'Digit1') { fit(true); return }
     if (k.shift && k.code === 'Digit2') { zoomToSelection(); return }
     if (key.toLowerCase() === 'q' && creationTool.value) { emit('toolLock', !props.toolLock); return } // lock the drawing tool
-    if (key === 'Escape') { emit('tool', 'select'); emit('toolLock', false); selection.clear(); editingNote.value = null; marquee.value = null; return }
+    if (key === 'Escape') { emit('tool', 'select'); emit('toolLock', false); selection.clear(); editingNote.value = null; marquee.value = null; erased.value = []; return }
     if (canvasFocused.value) {
       if ((key === 'Delete' || key === 'Backspace') && selection.count.value) { deleteSelection(); return }
       if (key.startsWith('Arrow') && selection.count.value) { nudge(key); return }
@@ -506,7 +573,7 @@ let shiftHeld = false
 /** Arrow keys move the selection; the viewer folds a held key into one save. */
 function nudge(key: string) {
   const step = shiftHeld ? 10 : 1
-  sendNudge(...nudgeOps(selection.selected.value, key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0))
+  sendNudge(...detachBinds(nudgeOps(selection.selected.value, key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0), cv.value?.notes, new Set(selection.keys.value)))
 }
 
 /** Does the canvas own the keyboard? True after the last press landed on it, so a stray Ctrl+D elsewhere stays the browser's. */
@@ -731,7 +798,7 @@ watch(isCanvas, () => nextTick(() => fit()))
   <div
     ref="viewport"
     class="canvas"
-    :class="{ panning, page: !isCanvas, focus: !!focusBoard, tool: canvasLevel && tool !== 'select' && tool !== 'hand', hand: (tool === 'hand' || spaceHeld) && canvasLevel }"
+    :class="{ panning, page: !isCanvas, focus: !!focusBoard, tool: canvasLevel && tool !== 'select' && tool !== 'hand' && tool !== 'eraser', hand: (tool === 'hand' || spaceHeld) && canvasLevel, eraser: tool === 'eraser' && canvasLevel }"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerleave="lastClient = null"
@@ -769,87 +836,15 @@ watch(isCanvas, () => nextTick(() => fit()))
           :title="canvasLevel ? 'Drag to move, double-click to edit its content' : (b.interactive ? 'Double-click to interact' : '')"
           @pointerdown="onBoardDown($event, b)"
           @click="onShieldClick($event, b)"
-          @dblclick="canvasLevel ? enterFocus(b.path) : (b.interactive ? (interacting = b.path) : enterFocus(b.path))"
+          @dblclick="canvasLevel ? (b.group && selection.count.value > 1 ? selection.only(boardKey(b.path)) : enterFocus(b.path)) : (b.interactive ? (interacting = b.path) : enterFocus(b.path))"
         />
       </div>
 
       <!-- notes and shapes sit above the boards -->
-      <template v-for="n in notes" :key="n.id">
-        <!-- sticky and text notes -->
-        <div
-          v-if="n.kind === 'sticky' || n.kind === 'text' || n.kind === 'title1'"
-          data-note
-          :data-id="n.id"
-          class="note"
-          :class="[n.kind, { sel: selection.has(noteKey(n.id)), editable: canvasLevel, editing: editingNote === n.id }]"
-          :style="{
-            left: n.x + 'px', top: n.y + 'px', width: (n.w || 240) + 'px', visibility: focusBoard ? 'hidden' : 'visible',
-            ...(n.kind === 'sticky' ? { background: fillOf(n.fill).bg, borderColor: fillOf(n.fill).bd } : {}),
-            ...(n.kind === 'text' ? { fontSize: (TEXT_PX[n.size] ?? 18) + 'px', fontWeight: n.bold ? 700 : 400, color: n.color } : {}),
-            ...(n.kind === 'sticky' && n.h ? { minHeight: n.h + 'px' } : {}),
-          }"
-          @pointerdown="onNoteDown($event, n)"
-          @dblclick.stop="startNoteEdit(n)"
-        >
-          <div
-            :ref="(el) => noteRef(el, n.id)"
-            class="ntext"
-            :contenteditable="editingNote === n.id"
-            :data-placeholder="n.kind === 'sticky' ? 'Write a note…' : 'Text'"
-            @blur="commitNoteEdit(n, $event)"
-            @keydown.stop="(ev: KeyboardEvent) => { if (ev.key === 'Escape') commitNoteEdit(n, ev, true); else if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); (ev.target as HTMLElement).blur() } }"
-          >{{ n.text }}</div>
-        </div>
-        <!-- shapes: svg, so a hollow rectangle only catches clicks on its outline -->
-        <svg
-          v-else-if="n.kind === 'rect' || n.kind === 'oval'"
-          data-note
-          :data-id="n.id"
-          class="note vec shape"
-          :class="{ sel: selection.has(noteKey(n.id)), editable: canvasLevel }"
-          :style="{ left: n.x + 'px', top: n.y + 'px', width: n.w + 'px', height: n.h + 'px', visibility: focusBoard ? 'hidden' : 'visible' }"
-          :viewBox="`0 0 ${n.w} ${n.h}`"
-          overflow="visible"
-          @pointerdown="onNoteDown($event, n)"
-        >
-          <rect v-if="n.kind === 'rect'" x="1" y="1" :width="Math.max(n.w - 2, 1)" :height="Math.max(n.h - 2, 1)" rx="3" :fill="fillOf(n.fill).bg" :stroke="n.color" stroke-width="2" />
-          <ellipse v-else :cx="n.w / 2" :cy="n.h / 2" :rx="Math.max(n.w / 2 - 1, 1)" :ry="Math.max(n.h / 2 - 1, 1)" :fill="fillOf(n.fill).bg" :stroke="n.color" stroke-width="2" />
-        </svg>
-        <svg
-          v-else-if="n.kind === 'line' || n.kind === 'arrow'"
-          data-note
-          :data-id="n.id"
-          class="note vec"
-          :class="{ sel: selection.has(noteKey(n.id)), editable: canvasLevel }"
-          :style="{ left: noteBox(n).x + 'px', top: noteBox(n).y + 'px', width: Math.max(noteBox(n).w, 1) + 'px', height: Math.max(noteBox(n).h, 1) + 'px', visibility: focusBoard ? 'hidden' : 'visible' }"
-          :viewBox="`0 0 ${arrowPath(n).bw} ${arrowPath(n).bh}`"
-          overflow="visible"
-          @pointerdown="onNoteDown($event, n)"
-        >
-          <line :x1="arrowPath(n).x1" :y1="arrowPath(n).y1" :x2="arrowPath(n).x2" :y2="arrowPath(n).y2" :stroke="n.color" stroke-width="2.5" stroke-linecap="round" />
-          <polygon
-            v-if="n.kind === 'arrow'"
-            :points="`0,0 -14,-6 -14,6`"
-            :fill="n.color"
-            :transform="`translate(${arrowPath(n).x2} ${arrowPath(n).y2}) rotate(${arrowPath(n).ang * 180 / Math.PI})`"
-          />
-          <line :x1="arrowPath(n).x1" :y1="arrowPath(n).y1" :x2="arrowPath(n).x2" :y2="arrowPath(n).y2" stroke="transparent" stroke-width="16" />
-        </svg>
-        <svg
-          v-else-if="n.kind === 'pen'"
-          data-note
-          :data-id="n.id"
-          class="note vec"
-          :class="{ sel: selection.has(noteKey(n.id)), editable: canvasLevel }"
-          :style="{ left: noteBox(n).x + 'px', top: noteBox(n).y + 'px', width: noteBox(n).w + 'px', height: noteBox(n).h + 'px', visibility: focusBoard ? 'hidden' : 'visible' }"
-          :viewBox="`0 0 ${noteBox(n).w} ${noteBox(n).h}`"
-          overflow="visible"
-          @pointerdown="onNoteDown($event, n)"
-        >
-          <path :d="penPath(n)" fill="none" :stroke="n.color" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-          <path :d="penPath(n)" fill="none" stroke="transparent" stroke-width="14" />
-        </svg>
-      </template>
+      <CanvasNote
+        v-for="n in notes" :key="n.id" :n="n" :selected="selection.has(noteKey(n.id))" :editable="canvasLevel" :editing="editingNote === n.id" :hidden="!!focusBoard" :erasing="erased.includes(n.id)"
+        @down="onNoteDown($event, n)" @edit="startNoteEdit(n)" @commit="(text) => commitNoteEdit(n, text)"
+      />
 
       <!-- selection frame and resize handles (canvas level) -->
       <template v-if="selBox && !editingNote">
@@ -865,6 +860,7 @@ watch(isCanvas, () => nextTick(() => fit()))
 
       <!-- snapping guides and the selection rectangle -->
       <div v-for="(g, i) in gestures.guides.value" :key="'g' + i" class="guide" :style="g.axis === 'x' ? { left: g.pos + 'px', top: g.from + 'px', width: 1 / k + 'px', height: g.to - g.from + 'px' } : { top: g.pos + 'px', left: g.from + 'px', height: 1 / k + 'px', width: g.to - g.from + 'px' }" />
+      <div v-if="gestures.bindHint.value" class="bind-hl" :style="{ left: gestures.bindHint.value.box.x - 4 + 'px', top: gestures.bindHint.value.box.y - 4 + 'px', width: gestures.bindHint.value.box.w + 8 + 'px', height: gestures.bindHint.value.box.h + 8 + 'px', borderWidth: 2 / k + 'px' }" />
       <div v-if="marquee" class="marquee" :style="{ left: marquee.x + 'px', top: marquee.y + 'px', width: marquee.w + 'px', height: marquee.h + 'px', borderWidth: 1 / k + 'px' }" />
 
       <!-- shape being drawn -->
@@ -906,9 +902,9 @@ watch(isCanvas, () => nextTick(() => fit()))
   </div>
   </ContextMenuTrigger>
   <CanvasContextMenu
-    :type="ctx.type" :id="ctx.id" :canvas-level="canvasLevel" :has-clip="board_.hasClip.value"
+    :type="ctx.type" :id="ctx.id" :canvas-level="canvasLevel" :has-clip="board_.hasClip.value" :locked="selectionLocked" :grouped="selectionGrouped" :can-group="selection.count.value > 1"
     @play="ctxBoard && emit('play', ctxBoard.path)" @focus="ctxBoard && enterFocus(ctxBoard.path)" @tweaks="ctxBoard && emit('openTweaks', ctxBoard.path)" @export="ctxBoard && emit('exportBoard', ctxBoard.path)"
-    @duplicate="board_.duplicate" @rename="ctxBoard && startRename(ctxBoard)" @delete-board="deleteSelection" @copy="board_.copy" @delete-note="deleteSelection"
+    @lock="toggleLock" @group="groupSelection" @ungroup="ungroupSelection" @duplicate="board_.duplicate" @rename="ctxBoard && startRename(ctxBoard)" @delete-board="deleteSelection" @copy="board_.copy" @delete-note="deleteSelection"
     @reorder="board_.reorder" @add-board="ctxAddBoard" @add-sticky="ctxAddSticky" @paste="board_.pasteAt(ctx)" @fit="fit(true)" @zoom="zoomAt" @present="emit('present')"
   />
   </ContextMenu>
@@ -933,19 +929,8 @@ watch(isCanvas, () => nextTick(() => fit()))
 .board-shield { position: absolute; inset: 0; cursor: inherit; }
 .board-shield.movable { cursor: move; }
 .canvas.tool .board-shield { cursor: crosshair; }
-.note { position: absolute; font-size: 14px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; pointer-events: none; }
-.note.editable { pointer-events: auto; cursor: move; }
-.note.title1 { font-size: 40px; font-weight: 650; color: var(--fg); line-height: 1.15; }
-.note.sticky { border: 1px solid; border-radius: 3px; padding: 10px 12px; color: #3b2f14; box-shadow: 0 2px 6px rgb(0 0 0 / .08); font-size: 13px; min-height: 60px; }
-.note.text { color: var(--fg); }
-.note .ntext { outline: none; min-height: 1.2em; cursor: inherit; }
-.note .ntext[contenteditable="true"] { user-select: text; -webkit-user-select: text; }
-.note.editing .ntext { cursor: text; }
-.note .ntext:empty::before { content: attr(data-placeholder); opacity: .45; }
-.note.vec { overflow: visible; }
-.note.vec.editable { pointer-events: none; }
-.note.vec.editable :deep(line), .note.vec.editable :deep(path), .note.vec.editable :deep(polygon) { pointer-events: stroke; cursor: move; }
-.note.vec.editable :deep(rect), .note.vec.editable :deep(ellipse) { pointer-events: visiblePainted; cursor: move; }
+.bind-hl { position: absolute; border: solid var(--brand); border-radius: 4px; pointer-events: none; box-sizing: border-box; z-index: 4; }
+.canvas.eraser, .canvas.eraser .board-shield { cursor: cell; }
 .guide { position: absolute; background: var(--brand); pointer-events: none; z-index: 4; }
 .marquee { position: absolute; border: solid #3b82f6; background: rgba(59, 130, 246, .08); pointer-events: none; box-sizing: border-box; }
 .selbox { position: absolute; border: solid #3b82f6; pointer-events: none; box-sizing: border-box; }

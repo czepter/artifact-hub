@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ArrowDownToLine, ArrowUpToLine, ChevronDown, ChevronUp, ClipboardPaste, Copy, CopyPlus, Download, Maximize2, Minus, Pencil, Play, Plus, Presentation, ScanSearch, SlidersHorizontal, StickyNote, Trash2 } from '@lucide/vue'
+import { ArrowDownToLine, Group, Lock, LockOpen, Ungroup, ArrowUpToLine, ChevronDown, ChevronUp, ClipboardPaste, Copy, CopyPlus, Download, Maximize2, Minus, Pencil, Play, Plus, Presentation, ScanSearch, SlidersHorizontal, StickyNote, Trash2 } from '@lucide/vue'
 import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from '@/components/ui/context-menu'
 
 // The right-click menu of the canvas. It only decides what to show; Canvas does the work.
-defineProps<{ type: 'board' | 'note' | 'canvas', id: string, canvasLevel: boolean, hasClip: boolean }>()
+defineProps<{ type: 'board' | 'note' | 'canvas', id: string, canvasLevel: boolean, hasClip: boolean, locked: boolean, grouped: boolean, canGroup: boolean }>()
 defineEmits<{
-  play: [], focus: [], tweaks: [], export: [], duplicate: [], rename: [], deleteBoard: [], copy: [], deleteNote: []
+  play: [], focus: [], tweaks: [], export: [], duplicate: [], rename: [], lock: [], group: [], ungroup: [], deleteBoard: [], copy: [], deleteNote: []
   reorder: [mode: 'front' | 'forward' | 'backward' | 'back'], addBoard: [], addSticky: [], paste: [], fit: [], zoom: [factor: number], present: []
 }>()
 </script>
@@ -21,6 +21,9 @@ defineEmits<{
       <template v-if="canvasLevel">
         <ContextMenuItem @select="$emit('duplicate')"><Copy />Duplicate<ContextMenuShortcut>Ctrl D</ContextMenuShortcut></ContextMenuItem>
         <ContextMenuItem @select="$emit('rename')"><Pencil />Rename</ContextMenuItem>
+        <ContextMenuItem @select="$emit('lock')"><component :is="locked ? LockOpen : Lock" />{{ locked ? 'Unlock' : 'Lock' }}<ContextMenuShortcut>Ctrl Shift L</ContextMenuShortcut></ContextMenuItem>
+        <ContextMenuItem v-if="canGroup" @select="$emit('group')"><Group />Group<ContextMenuShortcut>Ctrl G</ContextMenuShortcut></ContextMenuItem>
+        <ContextMenuItem v-if="grouped" @select="$emit('ungroup')"><Ungroup />Ungroup<ContextMenuShortcut>Ctrl Shift G</ContextMenuShortcut></ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" @select="$emit('deleteBoard')"><Trash2 />Delete board<ContextMenuShortcut>⌫</ContextMenuShortcut></ContextMenuItem>
       </template>
@@ -34,6 +37,10 @@ defineEmits<{
         <ContextMenuItem @select="$emit('reorder', 'forward')"><ChevronUp />Bring forward<ContextMenuShortcut>]</ContextMenuShortcut></ContextMenuItem>
         <ContextMenuItem @select="$emit('reorder', 'backward')"><ChevronDown />Send backward<ContextMenuShortcut>[</ContextMenuShortcut></ContextMenuItem>
         <ContextMenuItem @select="$emit('reorder', 'back')"><ArrowDownToLine />Send to back<ContextMenuShortcut>Ctrl [</ContextMenuShortcut></ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem @select="$emit('lock')"><component :is="locked ? LockOpen : Lock" />{{ locked ? 'Unlock' : 'Lock' }}<ContextMenuShortcut>Ctrl Shift L</ContextMenuShortcut></ContextMenuItem>
+        <ContextMenuItem v-if="canGroup" @select="$emit('group')"><Group />Group<ContextMenuShortcut>Ctrl G</ContextMenuShortcut></ContextMenuItem>
+        <ContextMenuItem v-if="grouped" @select="$emit('ungroup')"><Ungroup />Ungroup<ContextMenuShortcut>Ctrl Shift G</ContextMenuShortcut></ContextMenuItem>
         <ContextMenuSeparator />
       </template>
       <ContextMenuItem :disabled="!canvasLevel" variant="destructive" @select="$emit('deleteNote')"><Trash2 />Delete</ContextMenuItem>

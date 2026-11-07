@@ -15,7 +15,7 @@ import { CONTAINER_TAGS, paletteHtml, type PaletteKind } from '#shared/palette'
 import { applyCanvasOps, mergeOps, type CanvasOp } from '#shared/canvasOps'
 import type { TreeNode } from './LayerTree.vue'
 
-type Tool = 'select' | 'hand' | 'text' | 'artboard' | 'sticky' | 'rect' | 'oval' | 'arrow' | 'line' | 'pen'
+import type { Tool } from '~/utils/canvasTools'
 
 const props = defineProps<{ refId: string }>()
 

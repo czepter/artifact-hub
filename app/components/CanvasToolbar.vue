@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Frame, Hand, Lock, MousePointer2, MoveUpRight, Circle, Pencil, Square, StickyNote, Type } from '@lucide/vue'
+import { Eraser, Frame, Hand, Lock, MousePointer2, MoveUpRight, Circle, Pencil, Square, StickyNote, Type } from '@lucide/vue'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -7,7 +7,7 @@ import type { Tool } from '~/utils/canvasTools'
 const props = defineProps<{ tool: Tool, toolLock?: boolean }>()
 const emit = defineEmits<{ 'update:tool': [tool: Tool], toolLock: [locked: boolean] }>()
 /** Double-click (or Q) keeps a drawing tool active after each shape. */
-const lockable = (id: string) => id !== 'select' && id !== 'hand'
+const lockable = (id: string) => id !== 'select' && id !== 'hand' && id !== 'eraser'
 
 const tools = [
   { id: 'select', label: 'Select', key: 'V', icon: MousePointer2 },
@@ -19,6 +19,7 @@ const tools = [
   { id: 'oval', label: 'Oval', key: 'O', icon: Circle },
   { id: 'arrow', label: 'Arrow', key: 'L', icon: MoveUpRight },
   { id: 'pen', label: 'Pen', key: 'P', icon: Pencil },
+  { id: 'eraser', label: 'Eraser (notes and drawings)', key: 'E', icon: Eraser },
 ] as const
 const value = computed(() => (props.tool === 'line' ? 'arrow' : props.tool))
 </script>

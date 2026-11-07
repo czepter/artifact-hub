@@ -23,6 +23,8 @@ const note = computed(() => (one.value?.type === 'note' ? props.canvas?.notes?.[
 const many = computed(() => props.sel.length > 1)
 const manyLabel = computed(() => { const b = props.sel.filter(s => s.type === 'board').length, n = props.sel.length - b; return [b && `${b} board${b === 1 ? '' : 's'}`, n && `${n} note${n === 1 ? '' : 's'}`].filter(Boolean).join(' and ') })
 const emitOp = (op: CanvasOp) => emit('ops', [op])
+/** Selected notes (for the style panel). */
+const selNotes = computed(() => props.sel.filter(s => s.type === 'note' && props.canvas?.notes?.[s.id]).map(s => ({ id: s.id, kind: props.canvas.notes[s.id].kind ?? 'sticky', note: props.canvas.notes[s.id] })))
 const ALIGN: { mode: AlignMode, label: string, icon: any }[] = [
   { mode: 'left', label: 'Align left', icon: AlignStartVertical }, { mode: 'hcenter', label: 'Align horizontal centres', icon: AlignCenterVertical }, { mode: 'right', label: 'Align right', icon: AlignEndVertical },
   { mode: 'top', label: 'Align top', icon: AlignStartHorizontal }, { mode: 'vcenter', label: 'Align vertical centres', icon: AlignCenterHorizontal }, { mode: 'bottom', label: 'Align bottom', icon: AlignEndHorizontal },
@@ -92,11 +94,11 @@ function addBoard() {
       <section class="grid gap-2">
         <h3 class="sec">{{ ({ sticky: 'Sticky note', text: 'Text', rect: 'Rectangle', oval: 'Oval', line: 'Line', arrow: 'Arrow', pen: 'Drawing', title1: 'Title' } as Record<string, string>)[kind] ?? 'Note' }}</h3>
         <div v-if="kind === 'sticky' || kind === 'text' || kind === 'title1'" class="grid gap-1.5"><Label>Text</Label><Textarea rows="3" :model-value="note.text" @change="patchNote({ text: ($event.target as HTMLTextAreaElement).value })" /></div>
-        <ToggleGroup v-if="kind === 'sticky' || kind === 'rect' || kind === 'oval'" type="single" class="flex-wrap justify-start gap-1.5" aria-label="Fill" :model-value="note.fill ?? (kind === 'sticky' ? 'yellow' : 'none')" @update:model-value="(v) => v && patchNote({ fill: String(v) })">
+        <ToggleGroup v-if="kind === 'sticky'" type="single" class="flex-wrap justify-start gap-1.5" aria-label="Fill" :model-value="note.fill ?? (kind === 'sticky' ? 'yellow' : 'none')" @update:model-value="(v) => v && patchNote({ fill: String(v) })">
           <ToggleGroupItem v-for="f in FILLS" :key="f" :value="f" size="sm" class="size-6 min-w-6 rounded-full border p-0 data-[state=on]:ring-2 data-[state=on]:ring-primary" :style="{ background: fillOf(f).bg }" :title="f" :aria-label="`Fill ${f}`" />
         </ToggleGroup>
-        <div v-if="kind !== 'sticky'" class="grid gap-1.5">
-          <Label>{{ kind === 'text' ? 'Text colour' : 'Stroke colour' }}</Label>
+        <div v-if="kind === 'text'" class="grid gap-1.5">
+          <Label>Text colour</Label>
           <div class="flex gap-1.5">
             <Input type="color" class="size-8 shrink-0 cursor-pointer p-0.5" :model-value="note.color ?? '#1c1b19'" @change="patchNote({ color: ($event.target as HTMLInputElement).value })" />
             <Input class="h-8" :model-value="note.color ?? '#1c1b19'" @change="patchNote({ color: ($event.target as HTMLInputElement).value })" />
@@ -116,6 +118,7 @@ function addBoard() {
         </div>
         <div><Button size="xs" variant="outline" class="text-destructive" @click="emitOp({ type: 'deleteNote', id: one.id })"><Trash2 />Delete</Button></div>
       </section>
+      <ShapeStylePanel :notes="selNotes" @ops="emit('ops', $event)" />
       <section v-if="kind !== 'pen'" class="grid gap-2">
         <h3 class="sec">Frame</h3>
         <div class="grid grid-cols-2 gap-2">
@@ -131,6 +134,7 @@ function addBoard() {
       <section class="grid gap-2">
         <h3 class="sec">{{ sel.length }} items</h3>
         <p class="hint">{{ manyLabel }} selected. Drag to move them together, or use a handle to resize them as a group. Shift-click adds or removes one.</p>
+        <ShapeStylePanel :notes="selNotes" @ops="emit('ops', $event)" />
         <h4 class="sub">Align</h4>
         <div class="flex flex-wrap gap-2">
           <ButtonGroup>

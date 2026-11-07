@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import { itemBox, unionBox } from '#shared/canvasGeometry'
 
 export { boardKey, noteKey, refOfKey, type SelRef } from '#shared/canvasItemOps'
-import { refOfKey, type SelRef } from '#shared/canvasItemOps'
+import { groupKeys, refOfKey, type SelRef } from '#shared/canvasItemOps'
 
 /**
  * The canvas selection: one Set of keys (`n:<id>` for notes, `b:<path>` for boards), plus the combined
@@ -27,6 +27,8 @@ export function useCanvasSelection(items: Ref<GeomItem[]>) {
   function add(key: string) { if (!keys.value.has(key)) keys.value = new Set([...keys.value, key]) }
   function selectAll() { keys.value = new Set(items.value.map(i => i.key)) }
   const only = (key: string | null) => set(key ? [key] : [])
+  /** Select the item, or the whole group when it is in one. */
+  const setGroup = (key: string) => set(groupKeys([...byKey.value.values()], key))
 
-  return { keys, byKey, selected, count, single, bbox, refs, has, set, clear, toggle, add, selectAll, only }
+  return { keys, byKey, selected, count, single, bbox, refs, has, set, clear, toggle, add, selectAll, only, setGroup }
 }
