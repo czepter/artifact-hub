@@ -140,19 +140,25 @@ function onEditOp(board: string, op: Record<string, unknown>) {
   queueSave()
 }
 /** One user gesture = one call: the ops are applied to the preview together (all or none) and saved in one batch. */
-function onCanvasOps(ops: CanvasOp[]) {
+let lastMerge = ''
+function onCanvasOps(ops: CanvasOp[], merge = '') {
   if (!ops.length) return
+  if (ops.length > 200) { onEditNote('That is too many items for one change (200 at most). Select fewer.'); return }
   const base = canvasDraft.value ?? data.value?.canvas ?? null
   try {
     canvasDraft.value = applyCanvasOps(base, (data.value?.files ?? []).map(f => f.path), ops).canvas
   } catch (e: any) { onEditNote(e?.message ?? 'That change is not allowed'); return }
   // The server takes at most 200 operations per save: save what is pending first rather than overflow it and lose it.
+  // Each gesture is its own save and undo step; only repeats of the same kind (a held arrow key, a slider drag) fold together.
+  const continues = !!merge && merge === lastMerge
+  lastMerge = merge
+  if (canvasPending.length && !continues) { overflow.push(canvasPending); canvasPending = [] }
   if (canvasPending.length + ops.length > 180) { overflow.push(canvasPending); canvasPending = []; void flush() }
   canvasPending = mergeOps(canvasPending, ops)
   // Adding or removing a board changes files, so it is saved at once; everything else waits for a pause.
   queueSave(ops.some(op => op.type === 'addBoard' || op.type === 'removeBoard' || op.type === 'duplicateBoard'))
 }
-const onCanvasOp = (op: CanvasOp) => onCanvasOps([op])
+const onCanvasOp = (op: CanvasOp, merge = '') => onCanvasOps([op], merge)
 function onEditNote(text: string) {
   editNote.value = text
   clearTimeout(noteTimer)
@@ -269,7 +275,7 @@ function onTweakChange(values: Record<string, unknown>) {
   if (!board) return
   canvasRef.value?.editCmd(board, { cmd: 'tweak-set', props: values }) // live preview in the board
   tweaksByBoard[board] = { defs: tweaksByBoard[board]?.defs ?? null, values }
-  onCanvasOp({ type: 'updateBoard', path: board, patch: { tweaks: Object.keys(values).length ? values : null } })
+  onCanvasOp({ type: 'updateBoard', path: board, patch: { tweaks: Object.keys(values).length ? values : null } }, 'tweak:' + board)
 }
 async function onOpenTweaks(path: string) {
   if (data.value?.role !== 'owner') return

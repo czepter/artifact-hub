@@ -17,11 +17,13 @@ export default defineEventHandler(async (event) => {
   try {
     const r = applyCanvasOps(current, listFiles(id, a.current_version).map(f => f.path), b.ops as CanvasOp[])
     // duplicateBoard: the copy is byte for byte the source (a board added earlier in the same batch is still in addFiles).
+    // (a source may be a board added, or copied, earlier in the same batch; copies keep the exact bytes)
+    const made = new Map<string, string>(r.addFiles.map(f => [f.path, Buffer.from(f.content, 'utf8').toString('base64')]))
     const copies = r.copyFiles.map((c) => {
-      const fresh = r.addFiles.find(f => f.path === c.from)
-      const src = fresh ? fresh.content : readFile(id, a.current_version, c.from)?.content.toString('utf8')
+      const src = made.get(c.from) ?? readFile(id, a.current_version, c.from)?.content.toString('base64')
       if (src === undefined) throw new CanvasError(404, `The file of board ${c.from} is missing`)
-      return { path: c.to, content: src }
+      made.set(c.to, src)
+      return { path: c.to, content: src, encoding: 'base64' as const }
     })
     const pub = publish({
       id, baseVersion: a.current_version,

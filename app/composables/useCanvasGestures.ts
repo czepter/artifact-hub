@@ -5,7 +5,7 @@ import type { useCanvasSelection } from './useCanvasSelection'
 
 type Ov = Partial<{ x: number, y: number, w: number, h: number, points: number[][] }>
 type G =
-  | { kind: 'move', x: number, y: number, orig: { key: string, x: number, y: number }[], moved: boolean }
+  | { kind: 'move', key: string, shift: boolean, x: number, y: number, orig: { key: string, x: number, y: number }[], moved: boolean }
   | { kind: 'resize', handle: string, x: number, y: number, items: GeomItem[], bbox: Box, moved: boolean }
   | { kind: 'endpoint', id: string, which: 'start' | 'end', x: number, y: number, orig: Box, moved: boolean }
 
@@ -27,7 +27,7 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
   function startMove(e: PointerEvent, key: string) {
     e.stopPropagation(); e.preventDefault() // no text selection, and no native drag that would cancel the pointer stream
     if (!selection.has(key)) selection.only(key)
-    g = { kind: 'move', x: e.clientX, y: e.clientY, orig: selection.selected.value.filter(i => !i.locked).map(i => ({ key: i.key, x: i.x, y: i.y })), moved: false }
+    g = { kind: 'move', key, shift: e.shiftKey, x: e.clientX, y: e.clientY, orig: selection.selected.value.filter(i => !i.locked).map(i => ({ key: i.key, x: i.x, y: i.y })), moved: false }
   }
   /** A handle of the selection box. */
   function startResize(e: PointerEvent, handle: string) {
@@ -63,6 +63,7 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
   function end(): { moved: boolean, ops: CanvasOp[], clear: () => void } {
     const d = g
     g = null
+    if (d && !d.moved && d.kind === 'move' && !d.shift && selection.count.value > 1) selection.only(d.key) // a plain click on one of several selects just that one
     if (!d || !d.moved) return { moved: false, ops: [], clear: () => {} }
     const keys = d.kind === 'move' ? d.orig.map(o => o.key) : d.kind === 'resize' ? d.items.filter(i => !i.locked).map(i => i.key) : [noteKey(d.id)]
     const ops = overrideOps(keys, boardOv, noteOv)

@@ -87,7 +87,8 @@ const oneOf = <T extends string>(v: unknown, list: readonly T[], name: string): 
 /** Validates the optional style / structure fields shared by notes. `null` clears a field. */
 function cleanStyle(n: NoteInput, out: Record<string, unknown>) {
   const set = (k: string, v: unknown, ok: () => unknown) => { if (v === null) delete out[k]; else if (v !== undefined) out[k] = ok() }
-  set('locked', n.locked, () => { if (typeof n.locked !== 'boolean') throw new CanvasError(400, 'locked must be true or false'); return n.locked })
+  if (n.locked !== undefined && n.locked !== null && typeof n.locked !== 'boolean') throw new CanvasError(400, 'locked must be true or false')
+  if (n.locked === true) out.locked = true; else if (n.locked === false || n.locked === null) delete out.locked
   set('group', n.group, () => { if (typeof n.group !== 'string' || !ID.test(n.group)) throw new CanvasError(400, 'Invalid group'); return n.group })
   set('stroke', n.stroke, () => { if (typeof n.stroke !== 'string' || !HEX.test(n.stroke)) throw new CanvasError(400, 'Invalid stroke colour'); return n.stroke })
   set('strokeWidth', n.strokeWidth, () => clamp(n.strokeWidth, 1, 24, 'strokeWidth'))

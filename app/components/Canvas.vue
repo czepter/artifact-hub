@@ -44,7 +44,7 @@ const emit = defineEmits<{
   editExport: [html: string]
   editReload: [board: string]
   /** One user gesture: all of its operations, saved together as one undo step. */
-  canvasOps: [ops: CanvasOp[]]
+  canvasOps: [ops: CanvasOp[], merge?: string]
   canvasSelect: [sel: SelRef[]]
   tool: [tool: Tool]
   play: [path: string]
@@ -209,6 +209,8 @@ const uid = () => 'nt' + Math.random().toString(36).slice(2, 8)
 const round = round1
 /** One user gesture = one batch: everything it changes goes out together, so it is one undo step. */
 const send = (...ops: CanvasOp[]) => { if (ops.length) emit('canvasOps', ops) }
+/** Arrow-key nudges: repeats of the key fold into the same save and undo step. */
+const sendNudge = (...ops: CanvasOp[]) => { if (ops.length) emit('canvasOps', ops, 'nudge') }
 
 function capture(e: PointerEvent) { try { viewport.value!.setPointerCapture(e.pointerId) } catch {} }
 
@@ -341,8 +343,9 @@ function commitNoteEdit(n: NoteView, e: Event | null, cancel = false) {
   editingNote.value = null
   const el = e?.target as HTMLElement | undefined
   const text = (el?.innerText ?? n.text).replace(/\n$/, '')
-  if (!cancel && text !== n.text) send({ type: 'updateNote', id: n.id, patch: { text } })
-  if (!cancel && !text.trim() && !n.text.trim()) send({ type: 'deleteNote', id: n.id }) // an empty new note is not kept
+  const empty = !cancel && !text.trim() && !n.text.trim() // an empty new note is not kept
+  if (!cancel && text !== n.text) send({ type: 'updateNote', id: n.id, patch: { text } }, ...(empty ? [{ type: 'deleteNote', id: n.id } as CanvasOp] : []))
+  else if (empty) send({ type: 'deleteNote', id: n.id })
 }
 // Focus the text field once per edit session (the flag is cleared when editing ends, so the next edit focuses again).
 function noteRef(el: unknown, id: string) {
@@ -378,14 +381,14 @@ function onContextMenu(e: MouseEvent) {
 }
 function ctxDeleteBoard() {
   const b = ctxBoard.value
-  if (b && window.confirm(`Delete the board "${b.title}"?\n\nIts file is removed from the current version (older versions keep it).`)) { send({ type: 'removeBoard', path: b.path }); selection.clear() }
+  if (b && confirmBoardDelete([b])) { send({ type: 'removeBoard', path: b.path }); selection.clear() }
 }
 function ctxAddBoard() { send({ type: 'addBoard', title: 'Board', x: round(ctx.value.x), y: round(ctx.value.y), w: 1280, h: 800 }) }
 function ctxAddSticky() { send({ type: 'addNote', id: uid(), note: { kind: 'sticky', x: round(ctx.value.x), y: round(ctx.value.y), w: 240, text: '' } as any }) }
 
 const TOOL_KEYS: Record<string, Tool> = { v: 'select', h: 'hand', t: 'text', a: 'artboard', s: 'sticky', r: 'rect', o: 'oval', l: 'arrow', p: 'pen' }
 
-interface KeyInfo { fromFrame?: boolean, key: string, code?: string, mod?: boolean, shift?: boolean, alt?: boolean }
+interface KeyInfo { key: string, code?: string, mod?: boolean, shift?: boolean, alt?: boolean }
 
 /** Ctrl/Cmd combinations the canvas owns. Returns true when handled (the caller then blocks the browser's own action). */
 function handleMod(k: KeyInfo): boolean {
@@ -409,7 +412,7 @@ function handleKey(input: string | KeyInfo) {
     const t = TOOL_KEYS[key.toLowerCase()]
     if (t && key.length === 1) { emit('tool', t); return }
     if (key === 'Escape') { emit('tool', 'select'); selection.clear(); editingNote.value = null; return }
-    if (canvasFocused.value || k.fromFrame) {
+    if (canvasFocused.value) {
       if ((key === 'Delete' || key === 'Backspace') && selection.count.value) { deleteSelection(); return }
       if (key.startsWith('Arrow') && selection.count.value) { nudge(key); return }
     }
@@ -421,7 +424,6 @@ function handleKey(input: string | KeyInfo) {
   else if (key === 'Escape') { interacting.value = null; selection.clear(); emit('deselect') }
 }
 
-const boardWord = (n: number) => (n === 1 ? 'board' : `${n} boards`)
 function confirmBoardDelete(list: { title: string }[]) {
   const what = list.length === 1 ? `the board "${list[0]!.title}"` : `${list.length} boards`
   return window.confirm(`Delete ${what}?\n\nThe ${list.length === 1 ? 'file is' : 'files are'} removed from the current version (older versions keep ${list.length === 1 ? 'it' : 'them'}).`)
@@ -439,16 +441,21 @@ let shiftHeld = false
 /** Arrow keys move the selection; the viewer folds a held key into one save. */
 function nudge(key: string) {
   const step = shiftHeld ? 10 : 1
-  send(...nudgeOps(selection.selected.value, key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0))
+  sendNudge(...nudgeOps(selection.selected.value, key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0))
 }
 
 /** Does the canvas own the keyboard? True after the last press landed on it, so a stray Ctrl+D elsewhere stays the browser's. */
 const canvasFocused = ref(false)
-function onWindowPointer(e: PointerEvent) { canvasFocused.value = !!viewport.value?.contains(e.target as Node) }
+function onWindowPointer(e: PointerEvent) {
+  const t = e.target as HTMLElement
+  // The toolbar, zoom pill and header buttons keep their own arrow-key behaviour.
+  canvasFocused.value = !!viewport.value?.contains(t) && !t.closest('[data-toolbar], .zoom, .focusbar, [data-ui], button, input, textarea')
+}
 
 function onKey(e: KeyboardEvent) {
   shiftHeld = e.shiftKey
   if ((e.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable]')) return
+  if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')) return // a dialog or menu owns the keyboard
   const mod = e.metaKey || e.ctrlKey
   if (mod || e.altKey) {
     // Browser shortcuts stay the browser's, unless the canvas has the focus and is being edited.
@@ -495,7 +502,7 @@ function onMessage(e: MessageEvent) {
       .then(result => reply({ ok: true, result: result ?? null }))
       .catch((err: any) => reply({ ok: false, error: err?.data?.statusMessage ?? err?.statusMessage ?? err?.message ?? 'request failed' }))
   } else if (d.type === 'hub:key' && typeof d.key === 'string') {
-    handleKey({ fromFrame: true, key: d.key, code: typeof d.code === 'string' ? d.code : undefined, mod: !!d.mod, shift: !!d.shift, alt: !!d.alt })
+    handleKey({ key: d.key, code: typeof d.code === 'string' ? d.code : undefined, mod: !!d.mod, shift: !!d.shift, alt: !!d.alt })
   } else if (d.type === 'hub:edit-select') {
     emit('editSelect', board.path, d.info ?? null)
   } else if (d.type === 'hub:edit-op' && d.op && props.editMode) {

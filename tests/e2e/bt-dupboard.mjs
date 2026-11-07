@@ -15,6 +15,8 @@ const c = (await api(`/api/view/${id}`)).canvas
 ok('the copy has its own board entry after the original in order', c.boards['screens/Poll-copy.html'].x === c.boards['screens/Poll.html'].x + 40 && c.order.at(-1) === 'screens/Poll-copy.html', c.order)
 r = await post([{ type: 'addBoard', path: 'new.html', title: 'New', x: 0, y: 2000, w: 200, h: 200 }, { type: 'duplicateBoard', path: 'new.html' }])
 ok('a board added in the same batch can be duplicated', r.status === 200 && (await raw('new-copy.html')) === (await raw('new.html')) && (await raw('new.html')).includes('<!doctype html>'), r)
+r = await post([{ type: 'duplicateBoard', path: 'screens/Poll.html' }, { type: 'duplicateBoard', path: 'screens/Poll-copy-2.html' }])
+ok('a copy of a copy in one batch works and is byte exact', r.status === 200 && (await raw('screens/Poll-copy-3.html')) === (await raw('screens/Poll.html')), r)
 r = await post([{ type: 'duplicateBoard', path: 'nope.html' }])
 ok('duplicating an unknown board is a 404 and changes nothing', r.status === 404, r)
 r = await post(Array.from({ length: 201 }, (_, i) => ({ type: 'addNote', id: 'q' + i, note: {} })))

@@ -47,6 +47,23 @@ await pg.keyboard.press('Control+z'); await t.settle(3200)
 const c6 = await t.canvas(), view6 = await t.view()
 ok('undo of a multi-delete loses nothing (entries and board files)', geom(c6) === g0 && ['screens/Poll.html', 'screens/Settings.html', 'screens/Login.html'].every(p => view6.files.some(f => f.path === p)), [Object.keys(c6.boards), view6.files.map(f => f.path)])
 
+// two different gestures inside the 1.2 s debounce are still two undo steps
+{
+  const va = await t.version()
+  await pg.mouse.click(stage.x + 900, stage.y + 720); await pg.keyboard.press('Control+a')
+  await pg.keyboard.press('ArrowRight')
+  const h = center(await pg.locator('.hd').nth(6).boundingBox())
+  await drag(pg, h, { x: h.x + 30, y: h.y - 20 })
+  await t.settle()
+  ok('a nudge and a resize in quick succession are two versions', await t.version() === va + 2, [va, await t.version()])
+  await pg.keyboard.press('Control+z'); await t.settle(2500)
+  await pg.keyboard.press('Control+z'); await t.settle(2500)
+  ok('two undos restore everything', geom(await t.canvas()) === g0)
+}
+// the toolbar keeps its own arrow keys
+await pg.mouse.click(stage.x + 900, stage.y + 720); await pg.keyboard.press('Control+a')
+await pg.locator('button[aria-label="Rectangle"]').click(); await pg.keyboard.press('ArrowRight'); await t.settle()
+ok('arrow keys with the toolbar focused do not nudge the selection', geom(await t.canvas()) === g0)
 // Escape clears the selection
 await pg.mouse.click(stage.x + 900, stage.y + 720); await pg.keyboard.press('Control+a'); await pg.keyboard.press('Escape'); await pg.waitForTimeout(200)
 ok('Escape clears the selection', await pg.locator('.selbox').count() === 0)
