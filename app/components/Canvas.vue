@@ -112,7 +112,6 @@ function dims(b: BoardView) {
   return focusBoard.value === b.path && b.expand === 'fill' ? { w: size.w, h: size.h } : { w: b.w, h: b.h }
 }
 
-
 const { heights: noteH, measure: measureNotes } = useNoteHeights(viewport)
 
 const rawNotes = computed<NoteView[]>(() => {
@@ -483,7 +482,6 @@ function onContextMenu(e: MouseEvent) {
 function ctxAddBoard() { send({ type: 'addBoard', title: 'Board', x: round(ctx.value.x), y: round(ctx.value.y), w: 1280, h: 800 }) }
 function ctxAddSticky() { send({ type: 'addNote', id: uid(), note: { kind: 'sticky', x: round(ctx.value.x), y: round(ctx.value.y), w: 240, text: '' } as any }) }
 
-
 interface KeyInfo { key: string, code?: string, mod?: boolean, shift?: boolean, alt?: boolean }
 
 /** Ctrl/Cmd combinations the canvas owns. Returns true when handled (the caller then blocks the browser's own action). */
@@ -508,10 +506,7 @@ const pictures = useCanvasPictures({
 })
 const { imageUrl, onDrop, hasFiles } = pictures
 /** Ctrl+V arrives as a paste event: a picture on the system clipboard wins, else what was copied on the canvas. */
-function onPaste(e: ClipboardEvent) {
-  pictures.onPaste(e)
-  if (!e.defaultPrevented && canvasLevel.value && canvasFocused.value && !(e.target as HTMLElement)?.closest?.('input, textarea, [contenteditable]') && board_.pasteAtPointer()) e.preventDefault()
-}
+const onPaste = (e: ClipboardEvent) => { pictures.onPaste(e); if (!e.defaultPrevented && canvasLevel.value && canvasFocused.value && !(e.target as HTMLElement)?.closest?.('input, textarea, [contenteditable]') && board_.pasteAtPointer()) e.preventDefault() }
 
 // ---- laser pointer, minimap -------------------------------------------------------------------------
 const laser = ref(false)
