@@ -1,0 +1,90 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *, :root[data-theme="dark"] *));
+
+:root {
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* project palette (used by the canvas chrome) */
+  --bg: #f5f5f5; --panel: #ffffff; --fg: #1e1e1e; --muted: #666666; --line: #e1e1e1; --hover: #ebebeb;
+  --brand: #0d6fd6; --brand-fg: #ffffff;
+  --canvas-bg: #e6e6e6; --canvas-dot: #cdcdcd;
+  /* shadcn tokens */
+  --radius: 0.625rem;
+  --background: #f5f5f5; --foreground: #1e1e1e;
+  --card: #ffffff; --card-foreground: #1e1e1e;
+  --popover: #ffffff; --popover-foreground: #1e1e1e;
+  --primary: #0d6fd6; --primary-foreground: #ffffff;
+  --secondary: #ebebeb; --secondary-foreground: #1e1e1e;
+  --muted-foreground: #666666;
+  --accent: #ebebeb; --accent-foreground: #1e1e1e;
+  --destructive: #c4281c;
+  --border: #e1e1e1; --input: #d4d4d4; --ring: #0d6fd6;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1e1e1e; --panel: #2c2c2c; --fg: #f2f2f2; --muted: #a6a6a6; --line: #424242; --hover: #383838;
+    --brand: #4da3ff; --brand-fg: #0a1a2e; --canvas-bg: #181818; --canvas-dot: #2d2d2d;
+    --background: #1e1e1e; --foreground: #f2f2f2;
+    --card: #2c2c2c; --card-foreground: #f2f2f2;
+    --popover: #2c2c2c; --popover-foreground: #f2f2f2;
+    --primary: #4da3ff; --primary-foreground: #0a1a2e;
+    --secondary: #383838; --secondary-foreground: #f2f2f2;
+    --muted-foreground: #a6a6a6;
+    --accent: #383838; --accent-foreground: #f2f2f2;
+    --destructive: #ff8b80;
+    --border: #424242; --input: #4f4f4f; --ring: #4da3ff;
+    color-scheme: dark;
+  }
+}
+
+/* explicit choice from the user menu */
+:root[data-theme="dark"] {
+  --bg: #1e1e1e; --panel: #2c2c2c; --fg: #f2f2f2; --muted: #a6a6a6; --line: #424242; --hover: #383838;
+  --brand: #4da3ff; --brand-fg: #0a1a2e; --canvas-bg: #181818; --canvas-dot: #2d2d2d;
+  --background: #1e1e1e; --foreground: #f2f2f2;
+  --card: #2c2c2c; --card-foreground: #f2f2f2;
+  --popover: #2c2c2c; --popover-foreground: #f2f2f2;
+  --primary: #4da3ff; --primary-foreground: #0a1a2e;
+  --secondary: #383838; --secondary-foreground: #f2f2f2;
+  --muted-foreground: #a6a6a6;
+  --accent: #383838; --accent-foreground: #f2f2f2;
+  --destructive: #ff8b80;
+  --border: #424242; --input: #4f4f4f; --ring: #4da3ff;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: var(--font);
+  --color-background: var(--background); --color-foreground: var(--foreground);
+  --color-card: var(--card); --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--hover); --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px); --radius-md: calc(var(--radius) - 2px); --radius-lg: var(--radius); --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html, body, #__nuxt { height: 100%; }
+  body { @apply bg-background text-foreground; margin: 0; font: 14px/1.5 var(--font); }
+  a { color: inherit; }
+}
+.muted { color: var(--muted); }
+.center { min-height: 100%; display: grid; place-items: center; padding: 24px; }
+.stack { display: grid; gap: 10px; }
+.err { color: var(--destructive); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* App chrome = the viewer's canvas idiom: a dotted ground, floating pills, boards with their label above. */
+.hub-ground { min-height: 100%; background: var(--canvas-bg); background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px); background-size: 24px 24px; }
+.float { box-shadow: 0 4px 18px rgb(0 0 0 / .14); }
+:root[data-theme="dark"] .float { box-shadow: 0 4px 18px rgb(0 0 0 / .5); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .float { box-shadow: 0 4px 18px rgb(0 0 0 / .5); } }

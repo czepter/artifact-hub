@@ -1,0 +1,22 @@
+import { launch, api, B } from './bh.mjs'
+const page = `<!doctype html><html><head><meta charset="utf-8"><title>U</title></head><body style="margin:0;font-family:system-ui;background:#eaeef6"><div id="card" style="max-width:560px;margin:24px auto 24px 280px;background:#f4f8ff;border:1px solid #d6dbe6;border-radius:12px;padding:28px"><h1 style="margin:0 0 12px">Zugriff erlauben?</h1><p style="margin:0 0 16px">Dieser Client darf Tools aufrufen.</p><button style="padding:10px 16px;border:0;border-radius:8px;background:#3730a3;color:#fff">Zugriff erlauben</button><p style="margin:16px 0 0">Footer text</p></div></body></html>`
+const art = await api('/api/artifacts', { title: 'dbg6', files: [{ path: 'index.html', content: page }] })
+const { browser, page: pg, logs } = await launch()
+const msgs = []; await pg.exposeFunction('__log', m => msgs.push(m))
+await pg.addInitScript(() => window.addEventListener('message', e => { const d = e.data; if (d && d.type === 'hub:edit-op') window.__log(JSON.stringify(d.op)) }))
+await pg.goto(`${B}/a/${art.id}`); await pg.waitForSelector('iframe'); await pg.waitForTimeout(600)
+await pg.click('button:has-text("Edit")'); await pg.waitForTimeout(500)
+const fr = pg.frameLocator('iframe').first(), bt = fr.locator('button').first()
+const info = () => bt.evaluate(e => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), pos: s.position, left: s.left, top: s.top, inline: e.getAttribute('style').replace(/background[^;]*;?/, '') } })
+await pg.locator('.dm .seg button', { hasText: 'Reorders' }).click(); await pg.waitForTimeout(300)
+console.log('mode buttons:', await pg.locator('.dm .seg button.on').innerText())
+const lastP = fr.locator('p').last(); const lp = await lastP.boundingBox(); const h1 = await fr.locator('h1').boundingBox()
+console.log('footer p at y', Math.round(lp.y), '| h1 at y', Math.round(h1.y))
+msgs.length = 0
+await pg.mouse.move(lp.x + 20, lp.y + 8); await pg.mouse.down(); await pg.mouse.move(lp.x + 20, lp.y - 30, { steps: 4 }); await pg.mouse.move(lp.x + 20, h1.y + 4, { steps: 8 })
+console.log('drop indicator visible while dragging:', await fr.locator('[data-hub-overlay]').evaluateAll(els => els.map(e => e.style.cssText.slice(0, 120)).filter(c => /height: 3px|width: 3px/.test(c))))
+await pg.mouse.up(); await pg.waitForTimeout(400)
+const after = await lastP.boundingBox()
+console.log('footer p now at y', Math.round(after.y), 'position', await lastP.evaluate(e => getComputedStyle(e).position))
+console.log(msgs.join('\n'))
+await browser.close(); await api(`/api/artifacts/${art.id}`, null, 'DELETE')

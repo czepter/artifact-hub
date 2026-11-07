@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Counter</title><script src="./support.js"></script></head>
+<body>
+<x-dc>
+<helmet><style>body{margin:0;font-family:system-ui}.pill{padding:2px 8px;border-radius:99px;background:#eee}</style></helmet>
+<div id="root" style="padding: 16px">
+  <h1>Count: {{count}}</h1>
+  <button id="inc" onClick="{{inc}}">Add</button>
+  <button id="reset" onClick="{{reset}}" disabled="{{isZero}}">Reset</button>
+  <sc-if value="{{big}}" hint-placeholder-val="{{ true }}"><p id="big">That is a lot.</p></sc-if>
+  <sc-if value="{{small}}"><p id="small">Keep going.</p></sc-if>
+  <ul id="list"><sc-for list="{{items}}" as="it" hint-placeholder-count="2"><li data-i="{{$index}}" style="color: {{it.color}}"><span class="x">{{$index}}:{{it.label}}</span> <button onClick="{{it.pick}}">pick</button></li></sc-for></ul>
+  <p id="picked">picked: {{picked}}</p>
+  <input id="name" value="{{name}}" onChange="{{setName}}">
+  <p id="hello">Hi {{name}}!</p>
+  <a id="link" href="Consent.dc.html">to consent</a>
+  <div id="kids"><sc-for list="{{items}}" as="it"><dc-import name="Pill" label="{{it.label}}" tone="{{it.color}}" hint-size="80px,24px"></dc-import></sc-for></div>
+  <svg id="svg" viewBox="0 0 10 10" width="10" height="10"><circle cx="5" cy="5" r="4" stroke-width="2" fill="none" stroke="red" /></svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { count: 0, picked: 'none', name: 'Ada' }; }
+  renderVals() {
+    const c = this.state.count;
+    return {
+      count: c, big: c >= 3, small: c < 3, isZero: c === 0, picked: this.state.picked, name: this.state.name,
+      inc: () => this.setState({ count: c + 1 }), reset: () => this.setState({ count: 0 }),
+      setName: (e) => this.setState({ name: e.target.value }),
+      items: [{ label: 'a', color: 'red' }, { label: 'b', color: 'blue' }].map((x) => ({ ...x, pick: () => this.setState({ picked: x.label }) })),
+    };
+  }
+}
+</script>
+</body></html>

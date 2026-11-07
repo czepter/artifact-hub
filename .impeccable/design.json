@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-06T00:00:00Z",
+  "title": "Design System: Artifact Hub",
+  "extensions": {
+    "colorMeta": {
+      "azure": { "role": "primary", "displayName": "Azure", "canonical": "#0d6fd6" },
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "#f5f5f5" }
+    },
+    "shadows": [
+      { "name": "float-toolbar", "value": "0 4px 18px rgb(0 0 0 / .14)", "purpose": "Viewer toolbar and floating panels" },
+      { "name": "float-menu", "value": "0 12px 36px rgb(0 0 0 / .18)", "purpose": "Menus and popovers" }
+    ],
+    "breakpoints": [{ "name": "viewer-stack", "value": "800px" }]
+  },
+  "components": [
+    {
+      "name": "Primary Button", "kind": "button", "refersTo": "button-primary",
+      "description": "One per region; the main action.",
+      "html": "<button class=\"ds-btn\">Sign in</button>",
+      "css": ".ds-btn{background:#0d6fd6;color:#fff;border:0;border-radius:8px;height:36px;padding:0 16px;font:500 14px system-ui;cursor:pointer}.ds-btn:hover{filter:brightness(.95)}.ds-btn:focus-visible{outline:3px solid rgb(13 111 214/.5)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Gallery Wall",
+    "overview": "Chrome in the manner of design tools: cool neutrals, one azure accent.",
+    "keyCharacteristics": ["True-neutral grays", "One azure mark per region", "Flat with hairlines; shadows only on floating layers"],
+    "rules": [{ "name": "The One Mark Rule", "body": "Azure on at most one control or mark per region.", "section": "colors" }],
+    "dos": ["Do build every control from app/components/ui."],
+    "donts": ["Don't use side-stripe borders as accents."]
+  }
+}

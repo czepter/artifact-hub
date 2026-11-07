@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>mcpwarden: Zugriff erlauben</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="min-height: 820px; box-sizing: border-box; padding: 32px 16px; background: #f4f4f5; color: #18181b; font-family: Inter, system-ui, sans-serif; font-size: 14px; line-height: 1.45; display: flex; align-items: center; justify-content: center">
+<div style="width: 100%; max-width: 480px; background: #ffffff; border: 1px solid #e4e4e7; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); padding: 28px; display: flex; flex-direction: column; gap: 20px">
+
+<div style="display: flex; align-items: center; gap: 12px">
+<div style="width: 44px; height: 44px; border-radius: 8px; background: {{accent}}; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px" aria-hidden="true">m</div>
+<div><h1 style="margin: 0; font-size: 18px; font-weight: 600">Zugriff erlauben?</h1><div style="font-size: 13px; color: #52525b">Angemeldet als christian@example.com</div></div>
+</div>
+
+<div role="alert" style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; color: #78350f">
+<div style="font-weight: 600">Unbekannter Client, nicht in der Allowlist</div>
+<dl style="margin: 0; display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 4px 10px; font-size: 13px">
+<dt>Name</dt><dd style="margin: 0; font-weight: 500">my-agent-tool</dd>
+<dt>Redirect</dt><dd style="margin: 0; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere">https://agent.example.org/callback</dd>
+<dt>Registriert</dt><dd style="margin: 0">vor 2 Minuten, per Dynamic Client Registration</dd>
+</dl>
+<div style="font-size: 13px">Der Name wurde vom Client selbst angegeben und ist nicht geprüft. Erlaube nur, was du selbst gestartet hast.</div>
+</div>
+
+<section aria-label="Berechtigungen" style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">Dieser Client darf</h2>
+<ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{scopes}}" as="s" hint-placeholder-count="3">
+<li style="display: flex; flex-direction: column; gap: 2px; border: 1px solid {{s.bd}}; border-radius: 6px; padding: 10px 12px; background: {{s.bg}}">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px"><span style="font-weight: 500">{{s.title}}</span><span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #3f3f46">{{s.scope}}</span></div>
+<div style="font-size: 13px; color: #3f3f46">{{s.desc}}</div>
+</li>
+</sc-for>
+</ul>
+</section>
+
+<label style="display: flex; align-items: flex-start; gap: 12px; min-height: 44px; font-size: 13px; cursor: pointer">
+<input type="checkbox" style="width: 20px; height: 20px; margin: 0; flex: 0 0 auto; accent-color: {{accent}}">
+<span>Ich kenne diesen Client und möchte ihm trotz der Warnung Zugriff geben.</span>
+</label>
+
+<div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end">
+<button style="height: 44px; padding: 0 18px; border: 1px solid #e4e4e7; background: #ffffff; border-radius: 6px; font: inherit; font-weight: 500; color: #18181b">Ablehnen</button>
+<button style="height: 44px; padding: 0 20px; border: 0; background: {{accent}}; border-radius: 6px; font: inherit; font-weight: 600; color: #ffffff">Zugriff erlauben</button>
+</div>
+
+<div style="font-size: 12px; color: #52525b">Du kannst den Zugriff jederzeit unter Clients widerrufen. Das Token gilt nur für diese Gateway-URL.</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#3730a3","options":["#3730a3","#0f766e","#18181b","#b91c1c"]},"$preview":{"width":900,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#3730a3';
+    const scopes = [
+      { title: 'Tools auflisten und aufrufen', scope: 'mcp', desc: 'Deine aktivierten Upstream-Tools nutzen.', bg: '#ffffff', bd: '#e4e4e7' },
+      { title: 'Upstreams verwalten', scope: 'mcpwarden:admin', desc: 'Upstreams anlegen, ändern und entfernen. Secrets bleiben ausgeschlossen: Tokens gibst du nur in der Web-UI ein.', bg: '#fafafa', bd: '#a1a1aa' },
+    ];
+    return { accent, scopes };
+  }
+}
+</script>
+</body>
+</html>
