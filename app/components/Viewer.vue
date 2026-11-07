@@ -81,6 +81,8 @@ const tweaksByBoard = reactive<Record<string, { defs: Record<string, any> | null
 const codeBusy = ref(false)
 const codeError = ref('')
 let canvasPending: CanvasOp[] = []
+/** Full batches set aside so the next one cannot push a save past the server's 200-operation limit. */
+const overflow: CanvasOp[][] = []
 let commitTimer: ReturnType<typeof setTimeout> | undefined
 let noteTimer: ReturnType<typeof setTimeout> | undefined
 let baseVersion = 0
@@ -144,6 +146,8 @@ function onCanvasOps(ops: CanvasOp[]) {
   try {
     canvasDraft.value = applyCanvasOps(base, (data.value?.files ?? []).map(f => f.path), ops).canvas
   } catch (e: any) { onEditNote(e?.message ?? 'That change is not allowed'); return }
+  // The server takes at most 200 operations per save: save what is pending first rather than overflow it and lose it.
+  if (canvasPending.length + ops.length > 180) { overflow.push(canvasPending); canvasPending = []; void flush() }
   canvasPending = mergeOps(canvasPending, ops)
   // Adding or removing a board changes files, so it is saved at once; everything else waits for a pause.
   queueSave(ops.some(op => op.type === 'addBoard' || op.type === 'removeBoard' || op.type === 'duplicateBoard'))
@@ -164,10 +168,11 @@ const errText = (e: any, fallback: string) => e?.data?.statusMessage ?? e?.statu
 async function commitAll() {
   const id = data.value?.artifact.id
   if (!id) return
-  // 1. canvas-level edits
-  if (canvasPending.length) {
-    const ops = canvasPending
-    canvasPending = []
+  // 1. canvas-level edits (set-aside batches first, then what is pending now)
+  while (overflow.length || canvasPending.length) {
+    const ops = overflow.shift() ?? canvasPending
+    if (ops === canvasPending) canvasPending = []
+    if (!ops.length) continue
     editStatus.value = 'saving'
     try {
       const r = await $fetch<{ version: number, removed: string[] }>(`/api/artifacts/${id}/canvas`, { method: 'POST', body: { baseVersion, ops } })
@@ -175,10 +180,10 @@ async function commitAll() {
       baseVersion = r.version
       editStatus.value = 'saved'
       await load()
-      if (!canvasPending.length) canvasDraft.value = null
+      if (!canvasPending.length && !overflow.length) canvasDraft.value = null
     } catch (e: any) {
       editStatus.value = 'error'; editMessage.value = errText(e, 'Could not save')
-      canvasDraft.value = null; canvasPending = []
+      canvasDraft.value = null; canvasPending = []; overflow.length = 0
       await resync([])
       return
     }
@@ -212,9 +217,9 @@ async function undo() {
   if (!editMode.value) return
   clearTimeout(commitTimer)
   const dirty = [...pending.entries()].filter(([, o]) => o.length).map(([b]) => b)
-  if (dirty.length || canvasPending.length) { // unsaved changes: discard them and show the stored state again
+  if (dirty.length || canvasPending.length || overflow.length) { // unsaved changes: discard them and show the stored state again
     dirty.forEach(b => pending.set(b, []))
-    canvasPending = []; canvasDraft.value = null
+    canvasPending = []; overflow.length = 0; canvasDraft.value = null
     editStatus.value = 'idle'
     await resync(dirty)
     return

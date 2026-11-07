@@ -1,4 +1,5 @@
 import { applyCanvasOps, CanvasError, emptyCanvas, mergeOps, orderedNoteIds, reorder, type CanvasOp } from '../../shared/canvasOps'
+import { deleteOps, nudgeOps, overrideOps, refOfKey } from '../../shared/canvasItemOps'
 import { arrowPath, fitView, itemBox, noteBox, penPath, scaleItems, moveEndpoint, toWorldPoint, unionBox, zoomView, type GeomItem } from '../../shared/canvasGeometry'
 import { applyEdits, getElementSource, EditError, ensureIds } from '../../server/utils/htmlEdit'
 let fails = 0
@@ -175,6 +176,21 @@ ok('zoomView keeps the anchor point fixed and clamps to 0.05..4', zv.k === 2 && 
 ok('toWorldPoint undoes the transform', (() => { const p = toWorldPoint({ tx: 100, ty: 20, k: 2 }, 300, 220); return p.x === 100 && p.y === 100 })())
 ok('arrowPath: end points and angle inside the box', (() => { const a = arrowPath({ kind: 'arrow', x: 100, y: 100, w: -40, h: -40 }); return a.x1 === 40 && a.y1 === 40 && a.x2 === 0 && a.y2 === 0 && Math.abs(a.ang + 3 * Math.PI / 4) < 1e-9 })())
 ok('penPath: path relative to the stroke box', penPath({ kind: 'pen', x: 10, y: 10, w: 0, h: 0, points: [[0, 0], [20, 5]] }) === 'M0,0 L20,5')
+
+// item ops (one delete / nudge / commit path)
+ok('deleteOps skips locked items and maps keys to ops', same(deleteOps([{ key: 'n:a' }, { key: 'b:p.html' }, { key: 'n:lk', locked: true }]), [{ type: 'deleteNote', id: 'a' }, { type: 'removeBoard', path: 'p.html' }]))
+ok('nudgeOps moves unlocked items from where they are, rounded', same(nudgeOps([{ key: 'n:a', x: 1.05, y: 2 }, { key: 'b:p.html', x: 0, y: 0 }, { key: 'n:l', x: 5, y: 5, locked: true }], 10, -1), [{ type: 'updateNote', id: 'a', patch: { x: 11.1, y: 1 } }, { type: 'updateBoard', path: 'p.html', patch: { x: 10, y: -1 } }]))
+ok('overrideOps builds one update per overridden item and copies the data', (() => { const pts = [[0, 0]]; const o = overrideOps(['n:p', 'b:b.html', 'n:none'], { 'b.html': { x: 1, y: 2, w: 3, h: 4 } }, { p: { x: 1, points: pts } }); pts[0]![0] = 9; return same(o, [{ type: 'updateNote', id: 'p', patch: { x: 1, points: [[0, 0]] } }, { type: 'updateBoard', path: 'b.html', patch: { x: 1, y: 2, w: 3, h: 4 } }]) })())
+ok('refOfKey', same(refOfKey('b:a/b.html'), { type: 'board', id: 'a/b.html' }) && same(refOfKey('n:x'), { type: 'note', id: 'x' }))
+// review fixes
+{
+  const stale: any = { ...emptyCanvas(), notes: { a: { kind: 'arrow', x: 0, y: 0, w: 5, h: 5, bind: { end: { type: 'note', id: 'gone' } } } } }
+  ok('a stale bind never blocks moving the note', applyCanvasOps(stale, [], [{ type: 'updateNote', id: 'a', patch: { x: 5 } }]).canvas.notes.a.x === 5)
+  throws('...but setting a bad bind still fails', () => applyCanvasOps(stale, [], [{ type: 'updateNote', id: 'a', patch: { bind: { end: { type: 'note', id: 'gone' } } } }]), 400)
+  throws('locked must be a boolean (note)', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { locked: 'no' as any } }]), 400)
+  throws('locked must be a boolean (board)', () => applyCanvasOps({ ...emptyCanvas(), boards: { 'p.html': {} }, order: ['p.html'] }, [], [{ type: 'updateBoard', path: 'p.html', patch: { locked: 'no' as any } }]), 400)
+  ok('mergeOps ignores undefined fields of the later patch', same((mergeOps([{ type: 'updateNote', id: 'a', patch: { x: 1, y: 2 } }], [{ type: 'updateNote', id: 'a', patch: { x: undefined, y: 3 } }])[0] as any).patch, { x: 1, y: 3 }))
+}
 
 // --- htmlEdit additions
 const page = '<body><div id="a"><p>one</p><img src="x.png"></div></body>'

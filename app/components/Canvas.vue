@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { Comment, ViewData, Anchor } from '~/types'
-import type { Canvas as CanvasT, CanvasOp } from '#shared/canvasOps'
-import { type Box, type GeomItem, arrowPath, isDirected, penPath, moveEndpoint, noteBox, round1, scaleItems } from '#shared/canvasGeometry'
+import { orderedNoteIds, type Canvas as CanvasT, type CanvasOp } from '#shared/canvasOps'
+import { type GeomItem, arrowPath, isDirected, penPath, noteBox, round1 } from '#shared/canvasGeometry'
+import { deleteOps, nudgeOps } from '#shared/canvasItemOps'
 import type { SelRef } from '~/composables/useCanvasSelection'
 
 import { ArrowLeft, ArrowRight, Download, Maximize2, Minus, Pencil, Play, Plus, Presentation, ScanSearch, SlidersHorizontal, StickyNote, Trash2, X } from '@lucide/vue'
@@ -105,7 +106,8 @@ function dims(b: BoardView) {
 
 const notes = computed<NoteView[]>(() => {
   const n = cv.value?.notes ?? {}
-  return Object.entries(n).map(([id, v]: [string, any]) => {
+  // Back to front: `noteOrder` when the canvas has one, else the order the notes are stored in.
+  return orderedNoteIds({ notes: n, noteOrder: cv.value?.noteOrder }).map(id => [id, n[id]] as [string, any]).map(([id, v]) => {
     const o = noteOv[id] ?? {}
     const kind = v.kind ?? 'sticky'
     return { id, kind, x: o.x ?? (+v.x || 0), y: o.y ?? (+v.y || 0), w: o.w ?? (v.w !== undefined ? +v.w : (kind === 'sticky' ? 240 : 360)), h: o.h ?? (+v.h || 0), text: String(v.text ?? ''), fill: v.fill ?? (kind === 'sticky' ? 'yellow' : 'none'), color: v.color ?? '#1c1b19', size: v.size ?? 'm', bold: !!v.bold, points: o.points ?? (Array.isArray(v.points) ? v.points : []), locked: !!v.locked }
@@ -118,6 +120,7 @@ const allItems = computed<GeomItem[]>(() => [
   ...notes.value.map(n => ({ key: noteKey(n.id), kind: n.kind, x: n.x, y: n.y, w: n.w, h: isDirected(n.kind) ? n.h : (n.h || noteBox(n).h), points: n.points, locked: n.locked })),
 ])
 const selection = useCanvasSelection(allItems)
+const gestures = useCanvasGestures(selection, boardOv, noteOv, k)
 const selectedBoard = computed(() => selection.refs.value.find(r => r.type === 'board')?.id ?? null)
 
 // ---- view transform --------------------------------------------------------------------------
@@ -198,9 +201,6 @@ function onWheel(e: WheelEvent) {
 
 type Drag =
   | { kind: 'pan', x: number, y: number, tx: number, ty: number, moved: boolean }
-  | { kind: 'move', x: number, y: number, orig: { key: string, x: number, y: number }[], moved: boolean }
-  | { kind: 'resize', handle: string, x: number, y: number, items: GeomItem[], bbox: Box, moved: boolean }
-  | { kind: 'endpoint', id: string, which: 'start' | 'end', x: number, y: number, orig: Box, moved: boolean }
   | { kind: 'create', tool: Tool, sx: number, sy: number, moved: boolean }
   | { kind: 'pen', pts: number[][], moved: boolean }
 let drag: Drag | null = null
@@ -233,39 +233,17 @@ function onPointerDown(e: PointerEvent) {
   drag = { kind: 'pan', x: e.clientX, y: e.clientY, tx: tx.value, ty: ty.value, moved: false }
 }
 
-/** Pressing a selectable thing: it becomes the selection (unless it is already part of one), and a drag moves the whole selection. */
-function startMove(e: PointerEvent, key: string) {
-  e.stopPropagation(); e.preventDefault() // no text selection, and no native drag that would cancel the pointer stream
-  if (!selection.has(key)) selection.only(key)
-  const orig = selection.selected.value.filter(i => !i.locked).map(i => ({ key: i.key, x: i.x, y: i.y }))
-  drag = { kind: 'move', x: e.clientX, y: e.clientY, orig, moved: false }
-}
 function onBoardDown(e: PointerEvent, b: BoardView) {
   if (!canvasLevel.value || props.tool !== 'select' || e.button !== 0) return
-  startMove(e, boardKey(b.path))
+  gestures.startMove(e, boardKey(b.path))
 }
 function onNoteDown(e: PointerEvent, n: NoteView) {
   if (!canvasLevel.value || props.tool !== 'select' || e.button !== 0 || editingNote.value === n.id) return
-  startMove(e, noteKey(n.id))
-}
-/** A resize handle of the selection box: the same code path for one item or many. */
-function onHandleDown(e: PointerEvent, handle: string) {
-  e.stopPropagation(); e.preventDefault()
-  const bbox = selection.bbox.value
-  if (!bbox) return
-  drag = { kind: 'resize', handle, x: e.clientX, y: e.clientY, items: selection.selected.value.map(i => ({ ...i, points: i.points?.map(p => [...p]) })), bbox: { ...bbox }, moved: false }
-}
-function onEndpointDown(e: PointerEvent, n: NoteView, which: 'start' | 'end') {
-  e.stopPropagation(); e.preventDefault()
-  drag = { kind: 'endpoint', id: n.id, which, x: e.clientX, y: e.clientY, orig: { x: n.x, y: n.y, w: n.w, h: n.h }, moved: false }
-}
-
-function setOverride(key: string, patch: Partial<Ov>) {
-  const r = refOfKey(key)
-  if (r.type === 'board') boardOv[r.id] = patch; else noteOv[r.id] = patch
+  gestures.startMove(e, noteKey(n.id))
 }
 
 function onPointerMove(e: PointerEvent) {
+  if (gestures.active()) { if (gestures.onMove(e) === 'start') capture(e); return }
   if (!drag) return
   const d = drag
   if (d.kind === 'create') {
@@ -287,15 +265,9 @@ function onPointerMove(e: PointerEvent) {
     if (Math.hypot(dx, dy) < 4) return
     d.moved = true
     capture(e)
-    if (d.kind === 'pan') panning.value = true
+    panning.value = true
   }
-  if (d.kind === 'pan') { tx.value = d.tx + dx; ty.value = d.ty + dy; return }
-  const wx = dx / k.value, wy = dy / k.value
-  if (d.kind === 'move') for (const o of d.orig) setOverride(o.key, { x: round(o.x + wx), y: round(o.y + wy) })
-  else if (d.kind === 'resize') {
-    const r = scaleItems(d.items, d.bbox, d.handle, { dx: wx, dy: wy, keepAspect: e.shiftKey, fromCenter: e.altKey })
-    for (const [key, p] of Object.entries(r.patches)) setOverride(key, p)
-  } else if (d.kind === 'endpoint') noteOv[d.id] = moveEndpoint(d.orig, d.which, wx, wy)
+  tx.value = d.tx + dx; ty.value = d.ty + dy
 }
 
 function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeof creating.value>) {
@@ -323,10 +295,17 @@ function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeo
 }
 
 function onPointerUp(e: PointerEvent) {
+  const done = gestures.end()
   const d = drag
   drag = null
   panning.value = false
   try { viewport.value!.releasePointerCapture(e.pointerId) } catch {}
+  if (done.moved) { // move, resize and endpoint drags end the same way: every live override goes out as one batch
+    justDragged = true; setTimeout(() => (justDragged = false), 0)
+    send(...done.ops)
+    nextTick(done.clear)
+    return
+  }
   if (!d) return
   if (d.kind === 'create' && creating.value) { const c = creating.value; creating.value = null; justDragged = true; setTimeout(() => (justDragged = false), 0); finishCreate(d, c); return }
   if (d.kind === 'pen') {
@@ -343,18 +322,7 @@ function onPointerUp(e: PointerEvent) {
     }
     return
   }
-  if (!d.moved) return
-  justDragged = true
-  setTimeout(() => (justDragged = false), 0)
-  // Move, resize and endpoint drags all end the same way: every live override goes out as one batch.
-  const keys = d.kind === 'move' ? d.orig.map(o => o.key) : d.kind === 'resize' ? d.items.filter(i => !i.locked).map(i => i.key) : d.kind === 'endpoint' ? [noteKey(d.id)] : []
-  const ops: CanvasOp[] = []
-  for (const key of keys) {
-    const r = refOfKey(key), o = r.type === 'board' ? boardOv[r.id] : noteOv[r.id]
-    if (o) ops.push((r.type === 'board' ? { type: 'updateBoard', path: r.id, patch: { ...o } } : { type: 'updateNote', id: r.id, patch: JSON.parse(JSON.stringify(o)) }) as CanvasOp)
-  }
-  send(...ops)
-  nextTick(() => { for (const key of keys) { const r = refOfKey(key); if (r.type === 'board') delete boardOv[r.id]; else delete noteOv[r.id] } })
+  if (d.moved) { justDragged = true; setTimeout(() => (justDragged = false), 0) }
 }
 
 function onViewportClick(e: MouseEvent) {
@@ -417,7 +385,7 @@ function ctxAddSticky() { send({ type: 'addNote', id: uid(), note: { kind: 'stic
 
 const TOOL_KEYS: Record<string, Tool> = { v: 'select', h: 'hand', t: 'text', a: 'artboard', s: 'sticky', r: 'rect', o: 'oval', l: 'arrow', p: 'pen' }
 
-interface KeyInfo { key: string, code?: string, mod?: boolean, shift?: boolean, alt?: boolean }
+interface KeyInfo { fromFrame?: boolean, key: string, code?: string, mod?: boolean, shift?: boolean, alt?: boolean }
 
 /** Ctrl/Cmd combinations the canvas owns. Returns true when handled (the caller then blocks the browser's own action). */
 function handleMod(k: KeyInfo): boolean {
@@ -441,8 +409,10 @@ function handleKey(input: string | KeyInfo) {
     const t = TOOL_KEYS[key.toLowerCase()]
     if (t && key.length === 1) { emit('tool', t); return }
     if (key === 'Escape') { emit('tool', 'select'); selection.clear(); editingNote.value = null; return }
-    if ((key === 'Delete' || key === 'Backspace') && selection.count.value) { deleteSelection(); return }
-    if (key.startsWith('Arrow') && selection.count.value) { nudge(key); return }
+    if (canvasFocused.value || k.fromFrame) {
+      if ((key === 'Delete' || key === 'Backspace') && selection.count.value) { deleteSelection(); return }
+      if (key.startsWith('Arrow') && selection.count.value) { nudge(key); return }
+    }
   }
   if (key === '0') fit(true)
   else if (key === '+' || key === '=') zoomAt(1.2)
@@ -453,26 +423,23 @@ function handleKey(input: string | KeyInfo) {
 
 const boardWord = (n: number) => (n === 1 ? 'board' : `${n} boards`)
 function confirmBoardDelete(list: { title: string }[]) {
-  const what = list.length === 1 ? `the board "${list[0]!.title}"` : `${boardWord(list.length)}`
+  const what = list.length === 1 ? `the board "${list[0]!.title}"` : `${list.length} boards`
   return window.confirm(`Delete ${what}?\n\nThe ${list.length === 1 ? 'file is' : 'files are'} removed from the current version (older versions keep ${list.length === 1 ? 'it' : 'them'}).`)
 }
 /** Deletes everything selected (locked items stay) in one batch; boards ask once. */
 function deleteSelection() {
   const list = selection.selected.value.filter(i => !i.locked)
+  if (!list.length) return
   const gone = list.filter(i => i.kind === 'board').map(i => boards.value.find(b => boardKey(b.path) === i.key)!)
   if (gone.length && !confirmBoardDelete(gone)) return
-  send(...list.map(i => (i.kind === 'board' ? { type: 'removeBoard', path: refOfKey(i.key).id } : { type: 'deleteNote', id: refOfKey(i.key).id }) as CanvasOp))
+  send(...deleteOps(list))
   selection.clear()
 }
 let shiftHeld = false
 /** Arrow keys move the selection; the viewer folds a held key into one save. */
 function nudge(key: string) {
   const step = shiftHeld ? 10 : 1
-  const dx = key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, dy = key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0
-  send(...selection.selected.value.filter(i => !i.locked).map((i) => {
-    const r = refOfKey(i.key), patch = { x: round(i.x + dx), y: round(i.y + dy) }
-    return (r.type === 'board' ? { type: 'updateBoard', path: r.id, patch } : { type: 'updateNote', id: r.id, patch }) as CanvasOp
-  }))
+  send(...nudgeOps(selection.selected.value, key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0))
 }
 
 /** Does the canvas own the keyboard? True after the last press landed on it, so a stray Ctrl+D elsewhere stays the browser's. */
@@ -489,7 +456,7 @@ function onKey(e: KeyboardEvent) {
     return
   }
   if (focusBoard.value && [' ', 'PageDown', 'PageUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault()
-  if (canvasLevel.value && e.key.startsWith('Arrow') && selection.count.value) e.preventDefault()
+  if (canvasLevel.value && canvasFocused.value && e.key.startsWith('Arrow') && selection.count.value) e.preventDefault()
   handleKey({ key: e.key, code: e.code, shift: e.shiftKey })
 }
 
@@ -528,7 +495,7 @@ function onMessage(e: MessageEvent) {
       .then(result => reply({ ok: true, result: result ?? null }))
       .catch((err: any) => reply({ ok: false, error: err?.data?.statusMessage ?? err?.statusMessage ?? err?.message ?? 'request failed' }))
   } else if (d.type === 'hub:key' && typeof d.key === 'string') {
-    handleKey({ key: d.key, code: typeof d.code === 'string' ? d.code : undefined, mod: !!d.mod, shift: !!d.shift, alt: !!d.alt })
+    handleKey({ fromFrame: true, key: d.key, code: typeof d.code === 'string' ? d.code : undefined, mod: !!d.mod, shift: !!d.shift, alt: !!d.alt })
   } else if (d.type === 'hub:edit-select') {
     emit('editSelect', board.path, d.info ?? null)
   } else if (d.type === 'hub:edit-op' && d.op && props.editMode) {
@@ -822,11 +789,11 @@ watch(isCanvas, () => nextTick(() => fit()))
       <template v-if="selBox && !editingNote">
         <div class="selbox" :style="{ left: selBox.x + 'px', top: selBox.y + 'px', width: selBox.w + 'px', height: selBox.h + 'px', borderWidth: 2 / k + 'px' }" />
         <template v-if="endpointNote">
-          <span data-handle class="hd" :style="endpoint(endpointNote, 'start')" @pointerdown.stop="onEndpointDown($event, endpointNote, 'start')" />
-          <span data-handle class="hd" :style="endpoint(endpointNote, 'end')" @pointerdown.stop="onEndpointDown($event, endpointNote, 'end')" />
+          <span data-handle class="hd" :style="endpoint(endpointNote, 'start')" @pointerdown.stop="gestures.startEndpoint($event, endpointNote, 'start')" />
+          <span data-handle class="hd" :style="endpoint(endpointNote, 'end')" @pointerdown.stop="gestures.startEndpoint($event, endpointNote, 'end')" />
         </template>
         <template v-else-if="showHandles">
-          <span v-for="h in HANDLES" :key="h" data-handle class="hd" :style="hStyle(selBox, h)" @pointerdown.stop="onHandleDown($event, h)" />
+          <span v-for="h in HANDLES" :key="h" data-handle class="hd" :style="hStyle(selBox, h)" @pointerdown.stop="gestures.startResize($event, h)" />
         </template>
       </template>
 

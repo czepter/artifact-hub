@@ -87,7 +87,7 @@ const oneOf = <T extends string>(v: unknown, list: readonly T[], name: string): 
 /** Validates the optional style / structure fields shared by notes. `null` clears a field. */
 function cleanStyle(n: NoteInput, out: Record<string, unknown>) {
   const set = (k: string, v: unknown, ok: () => unknown) => { if (v === null) delete out[k]; else if (v !== undefined) out[k] = ok() }
-  set('locked', n.locked, () => !!n.locked)
+  set('locked', n.locked, () => { if (typeof n.locked !== 'boolean') throw new CanvasError(400, 'locked must be true or false'); return n.locked })
   set('group', n.group, () => { if (typeof n.group !== 'string' || !ID.test(n.group)) throw new CanvasError(400, 'Invalid group'); return n.group })
   set('stroke', n.stroke, () => { if (typeof n.stroke !== 'string' || !HEX.test(n.stroke)) throw new CanvasError(400, 'Invalid stroke colour'); return n.stroke })
   set('strokeWidth', n.strokeWidth, () => clamp(n.strokeWidth, 1, 24, 'strokeWidth'))
@@ -215,7 +215,7 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         for (const k of ['w', 'h'] as const) if (p[k] !== undefined) b[k] = clamp(p[k], 40, 8000, k)
         if (p.title !== undefined) { if (typeof p.title !== 'string' || p.title.length > 80) throw new CanvasError(400, 'Invalid title'); b.title = p.title }
         if (p.is_interactive !== undefined) b.is_interactive = !!p.is_interactive
-        if (p.locked !== undefined) { if (p.locked === null || p.locked === false) delete b.locked; else b.locked = true }
+        if (p.locked !== undefined) { if (p.locked !== null && typeof p.locked !== 'boolean') throw new CanvasError(400, 'locked must be true or false'); if (!p.locked) delete b.locked; else b.locked = true }
         if (p.group !== undefined) { if (p.group === null) delete b.group; else if (typeof p.group !== 'string' || !ID.test(p.group)) throw new CanvasError(400, 'Invalid group'); else b.group = p.group }
         if (p.expand !== undefined) { if (p.expand === null || p.expand === '') delete b.expand; else if (p.expand === 'fill') b.expand = 'fill'; else throw new CanvasError(400, 'Invalid expand') }
         if (p.tweaks !== undefined) {
@@ -246,7 +246,7 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         const n = canvas.notes[op.id]
         if (!n) throw new CanvasError(404, `No such note: ${op.id}`)
         const clean = cleanNote(op.patch ?? {}, n)
-        checkBind(canvas, op.id, clean)
+        if (op.patch?.bind !== undefined) checkBind(canvas, op.id, clean) // a stale bind elsewhere never blocks moving the note
         canvas.notes[op.id] = clean
         break
       }
@@ -306,7 +306,8 @@ export function mergeOps(pending: CanvasOp[], incoming: CanvasOp[]): CanvasOp[] 
         const prev = out[i]!
         if (SAME_TARGET(prev, op)) {
           const p = prev as Extract<CanvasOp, { type: 'updateNote' | 'updateBoard' }>
-          out[i] = { ...p, patch: { ...p.patch, ...(op as typeof p).patch } } as CanvasOp
+          const later = Object.fromEntries(Object.entries((op as typeof p).patch ?? {}).filter(([, v]) => v !== undefined))
+          out[i] = { ...p, patch: { ...p.patch, ...later } } as CanvasOp
           merged = true
           break
         }

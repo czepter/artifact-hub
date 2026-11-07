@@ -2,10 +2,8 @@ import type { Box, GeomItem } from '#shared/canvasGeometry'
 import type { Ref } from 'vue'
 import { itemBox, unionBox } from '#shared/canvasGeometry'
 
-export type SelRef = { type: 'board' | 'note', id: string }
-export const boardKey = (path: string) => `b:${path}`
-export const noteKey = (id: string) => `n:${id}`
-export const refOfKey = (key: string): SelRef => ({ type: key[0] === 'b' ? 'board' : 'note', id: key.slice(2) })
+export { boardKey, noteKey, refOfKey, type SelRef } from '#shared/canvasItemOps'
+import { refOfKey, type SelRef } from '#shared/canvasItemOps'
 
 /**
  * The canvas selection: one Set of keys (`n:<id>` for notes, `b:<path>` for boards), plus the combined

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CanvasOp } from '#shared/canvasOps'
+import { boardKey, deleteOps, noteKey } from '#shared/canvasItemOps'
 import { Play, Plus, Trash2, Pencil } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,10 +21,12 @@ const note = computed(() => (one.value?.type === 'note' ? props.canvas?.notes?.[
 const many = computed(() => props.sel.length > 1)
 const manyLabel = computed(() => { const b = props.sel.filter(s => s.type === 'board').length, n = props.sel.length - b; return [b && `${b} board${b === 1 ? '' : 's'}`, n && `${n} note${n === 1 ? '' : 's'}`].filter(Boolean).join(' and ') })
 const emitOp = (op: CanvasOp) => emit('ops', [op])
-function removeSelection() { emit('ops', props.sel.map(s => (s.type === 'board' ? { type: 'removeBoard', path: s.id } : { type: 'deleteNote', id: s.id }) as CanvasOp)) }
+function removeSelection() {
+  const locked = (s: { type: string, id: string }) => !!(s.type === 'board' ? props.canvas?.boards?.[s.id] : props.canvas?.notes?.[s.id])?.locked
+  emit('ops', deleteOps(props.sel.map(s => ({ key: s.type === 'board' ? boardKey(s.id) : noteKey(s.id), locked: locked(s) }))))
+}
 const kind = computed(() => note.value?.kind ?? 'sticky')
 const FILLS = ['yellow', 'gray', 'red', 'orange', 'green', 'teal', 'blue', 'purple', 'pink', 'none']
-const FILL_HEX: Record<string, string> = { yellow: '#fef3c7', gray: '#f1f1f1', red: '#fecaca', orange: '#fed7aa', green: '#bbf7d0', teal: '#99f6e4', blue: '#bfdbfe', purple: '#e9d5ff', pink: '#fbcfe8', none: 'transparent' }
 
 const num = (e: Event) => Number((e.target as HTMLInputElement).value)
 function patchBoard(patch: Record<string, unknown>) { if (one.value) emitOp({ type: 'updateBoard', path: one.value.id, patch } as CanvasOp) }
@@ -82,7 +85,7 @@ function addBoard() {
         <h3 class="sec">{{ ({ sticky: 'Sticky note', text: 'Text', rect: 'Rectangle', oval: 'Oval', line: 'Line', arrow: 'Arrow', pen: 'Drawing', title1: 'Title' } as Record<string, string>)[kind] ?? 'Note' }}</h3>
         <div v-if="kind === 'sticky' || kind === 'text' || kind === 'title1'" class="grid gap-1.5"><Label>Text</Label><Textarea rows="3" :model-value="note.text" @change="patchNote({ text: ($event.target as HTMLTextAreaElement).value })" /></div>
         <ToggleGroup v-if="kind === 'sticky' || kind === 'rect' || kind === 'oval'" type="single" class="flex-wrap justify-start gap-1.5" aria-label="Fill" :model-value="note.fill ?? (kind === 'sticky' ? 'yellow' : 'none')" @update:model-value="(v) => v && patchNote({ fill: String(v) })">
-          <ToggleGroupItem v-for="f in FILLS" :key="f" :value="f" size="sm" class="size-6 min-w-6 rounded-full border p-0 data-[state=on]:ring-2 data-[state=on]:ring-primary" :style="{ background: FILL_HEX[f] }" :title="f" :aria-label="`Fill ${f}`" />
+          <ToggleGroupItem v-for="f in FILLS" :key="f" :value="f" size="sm" class="size-6 min-w-6 rounded-full border p-0 data-[state=on]:ring-2 data-[state=on]:ring-primary" :style="{ background: fillOf(f).bg }" :title="f" :aria-label="`Fill ${f}`" />
         </ToggleGroup>
         <div v-if="kind !== 'sticky'" class="grid gap-1.5">
           <Label>{{ kind === 'text' ? 'Text colour' : 'Stroke colour' }}</Label>
