@@ -16,12 +16,19 @@ export default defineEventHandler(async (event) => {
   if (raw) { try { current = JSON.parse(raw.content.toString('utf8')) } catch { throw createError({ statusCode: 422, statusMessage: 'canvas.json is not valid JSON' }) } }
   try {
     const r = applyCanvasOps(current, listFiles(id, a.current_version).map(f => f.path), b.ops as CanvasOp[])
+    // duplicateBoard: the copy is byte for byte the source (a board added earlier in the same batch is still in addFiles).
+    const copies = r.copyFiles.map((c) => {
+      const fresh = r.addFiles.find(f => f.path === c.from)
+      const src = fresh ? fresh.content : readFile(id, a.current_version, c.from)?.content.toString('utf8')
+      if (src === undefined) throw new CanvasError(404, `The file of board ${c.from} is missing`)
+      return { path: c.to, content: src }
+    })
     const pub = publish({
       id, baseVersion: a.current_version,
-      files: [{ path: 'canvas.json', content: JSON.stringify(r.canvas, null, 2) }, ...r.addFiles],
+      files: [{ path: 'canvas.json', content: JSON.stringify(r.canvas, null, 2) }, ...r.addFiles, ...copies],
       remove: r.removePaths, label: 'Canvas edit',
     })
-    return { version: pub.version, added: r.addFiles.map(f => f.path), removed: r.removePaths }
+    return { version: pub.version, added: [...r.addFiles, ...copies].map(f => f.path), removed: r.removePaths }
   } catch (e) {
     if (e instanceof CanvasError) throw createError({ statusCode: e.status, statusMessage: e.message })
     throw e

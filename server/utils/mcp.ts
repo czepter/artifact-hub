@@ -45,6 +45,13 @@ The model reads and writes the shared scope with data_list, data_get, data_set, 
 line/arrow {x,y,w,h} (w and h may be negative: drawn from x,y to x+w,y+h), pen {x,y,points:[[dx,dy],…]}. fill is yellow, gray, red, orange, green, teal,
 blue, purple, pink, none or a #rrggbb colour. A board entry may carry \`tweaks\`: {prop: value} for the levers a .dc.html board declares in data-props.
 
+Optional canvas fields (all validated; omit them for the defaults):
+- canvas \`noteOrder\`: ["n2","n1"] is the back-to-front stacking of notes. Without it notes stack in key order. \`order\` is unchanged: it is the present/focus sequence of boards.
+- note and board \`locked\`: true (cannot be moved, resized or marquee-selected in the viewer) and \`group\`: "g1" (items sharing a group id select together).
+- note styling: \`stroke\` (#rrggbb), \`strokeWidth\` (1-24), \`strokeStyle\` solid|dashed|dotted, \`fillStyle\` solid|hatch|cross, \`roundness\` sharp|round, and for line/arrow \`arrowStart\`/\`arrowEnd\` none|arrow|triangle|dot|bar.
+- arrow \`bind\`: {"start":{"type":"note","id":"n1"},"end":{"type":"board","id":"screens/Home.html"}} attaches an end to a note or board; the viewer draws the end at the target's edge and follows it when it moves. Targets must exist.
+Limits: 1000 notes, 400 pen points per stroke, boards and notes at most 8000 px wide or high, 200 operations per edit.
+
 ## Visual editor
 The owner can edit boards in the viewer (select, retype text, change styles, add elements). Saved edits add \`data-hub-id\` attributes to elements: they are editor bookkeeping, keep them when you rewrite a file (the editor re-adds missing ones).
 

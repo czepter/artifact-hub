@@ -480,7 +480,7 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
       return;
     }
     var mod = ev.metaKey || ev.ctrlKey;
-    if (mod && ev.key.toLowerCase() === 'z') { ev.preventDefault(); post({ type: 'hub:key', key: 'undo' }); return; }
+    if (mod && ev.key.toLowerCase() === 'z') { ev.preventDefault(); post({ type: 'hub:key', key: 'undo', code: ev.code, mod: true, shift: ev.shiftKey, alt: ev.altKey }); return; }
     if (!sel) return;
     if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); run({ cmd: 'delete', id: idOf(sel) }); }
     else if (mod && ev.key.toLowerCase() === 'd') { ev.preventDefault(); run({ cmd: 'duplicate', id: idOf(sel) }); }

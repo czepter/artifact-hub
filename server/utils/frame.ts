@@ -96,7 +96,7 @@ const BRIDGE = String.raw`<script data-hub-bridge>(function(){
     if (!navKeys || ev.metaKey || ev.ctrlKey || ev.altKey) return;
     var t = ev.target; if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     if (['ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Escape'].indexOf(ev.key) < 0) return;
-    ev.preventDefault(); post({ type: 'hub:key', key: ev.key });
+    ev.preventDefault(); post({ type: 'hub:key', key: ev.key, code: ev.code, mod: ev.ctrlKey || ev.metaKey, shift: ev.shiftKey, alt: ev.altKey });
   }, true);
   var layoutTimer = null;
   function layout(){ clearTimeout(layoutTimer); layoutTimer = setTimeout(function(){ post({ type: 'hub:layout', width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight }); }, 80); }
