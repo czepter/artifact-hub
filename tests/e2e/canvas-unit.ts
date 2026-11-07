@@ -140,6 +140,18 @@ ok('images move, scale (aspect kept by default for a single one) and copy like o
   const a = scaleItems([{ key: 'n:im', kind: 'image', x: 0, y: 0, w: 200, h: 100 }], { x: 0, y: 0, w: 200, h: 100 }, 'se', { dx: 100, dy: 0, keepAspect: true })
   return same(a.patches['n:im'], { x: 0, y: 0, w: 300, h: 150 })
 })())
+ok('smoothPath never leaves the box of its points (no overshoot at a corner)', (() => {
+  const d = smoothPath([[0, 0], [100, 0], [100, 100]]); const nums = [...d.matchAll(/-?\d+(\.\d+)?/g)].map(m => +m[0])
+  return nums.every(v => v >= 0 && v <= 100)
+})())
+ok('updateNote cannot make an image without a source, and a note that stops being an image drops it', (() => {
+  const base = applyCanvasOps(null, [], [{ type: 'addNote', id: 'im', note: { kind: 'image', src: 'assets/0123456789abcdef.png', w: 10, h: 10 } }, { type: 'addNote', id: 'r', note: { kind: 'rect', w: 10, h: 10 } }]).canvas
+  let e = 0
+  try { applyCanvasOps(base, [], [{ type: 'updateNote', id: 'r', patch: { kind: 'image' } }]) } catch (x: any) { e = x.status }
+  const back = applyCanvasOps(base, [], [{ type: 'updateNote', id: 'im', patch: { kind: 'rect' } }]).canvas.notes.im
+  return e === 400 && !('src' in back)
+})())
+ok('styleOps writes fillStyle for rect and oval only', same(styleOps([{ id: 'r', kind: 'rect' }, { id: 'a', kind: 'arrow' }], { fillStyle: 'hatch' }), [{ type: 'updateNote', id: 'r', patch: { fillStyle: 'hatch' } }]))
 // limits stay
 throws('more than 200 operations rejected', () => applyCanvasOps(null, [], Array.from({ length: 201 }, (_, i) => ({ type: 'addNote' as const, id: 'n' + i, note: {} }))), 413)
 throws('more than 1000 notes rejected', () => { let c: any = null; for (let i = 0; i < 6; i++) c = applyCanvasOps(c, [], Array.from({ length: 200 }, (_, j) => ({ type: 'addNote' as const, id: `n${i}_${j}`, note: {} }))).canvas }, 413)

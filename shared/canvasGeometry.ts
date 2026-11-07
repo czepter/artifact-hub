@@ -390,7 +390,10 @@ export function smoothPath(pts: number[][]): string {
   if (pts.length < 3) return pts.slice(1).reduce((a, p) => `${a} L${f(p[0]!)},${f(p[1]!)}`, d)
   for (let i = 0; i < pts.length - 1; i++) {
     const p0 = pts[i - 1] ?? pts[i]!, p1 = pts[i]!, p2 = pts[i + 1]!, p3 = pts[i + 2] ?? p2
-    d += ` C${f(p1[0]! + (p2[0]! - p0[0]!) / 6)},${f(p1[1]! + (p2[1]! - p0[1]!) / 6)} ${f(p2[0]! - (p3[0]! - p1[0]!) / 6)},${f(p2[1]! - (p3[1]! - p1[1]!) / 6)} ${f(p2[0]!)},${f(p2[1]!)}`
+    // Control points stay inside the box of their segment, so a corner is never overshot and the curve stays inside the stroke's own box.
+    const lo = [Math.min(p1[0]!, p2[0]!), Math.min(p1[1]!, p2[1]!)], hi = [Math.max(p1[0]!, p2[0]!), Math.max(p1[1]!, p2[1]!)]
+    const cl = (v: number, a: 0 | 1) => f(Math.min(hi[a]!, Math.max(lo[a]!, v)))
+    d += ` C${cl(p1[0]! + (p2[0]! - p0[0]!) / 6, 0)},${cl(p1[1]! + (p2[1]! - p0[1]!) / 6, 1)} ${cl(p2[0]! - (p3[0]! - p1[0]!) / 6, 0)},${cl(p2[1]! - (p3[1]! - p1[1]!) / 6, 1)} ${f(p2[0]!)},${f(p2[1]!)}`
   }
   return d
 }

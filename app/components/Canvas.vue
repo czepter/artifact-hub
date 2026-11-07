@@ -496,7 +496,6 @@ function handleMod(k: KeyInfo): boolean {
   if (c === 'KeyG') return k.shift ? ungroupSelection() : groupSelection()
   if (c === 'KeyL' && k.shift) return toggleLock()
   if (c === 'KeyC' && !k.shift) return board_.copy()
-  if (c === 'KeyV' && !k.shift) return board_.pasteAtPointer()
   if (c === 'KeyD' && !k.shift) return board_.duplicate()
   if ((k.key === ']' || k.key === '[') && !k.shift) return board_.reorder(k.key === ']' ? 'front' : 'back')
   return false
@@ -507,7 +506,12 @@ const pictures = useCanvasPictures({
   canEdit: () => canvasLevel.value, canPaste: () => canvasLevel.value && canvasFocused.value, newId: uid, selection, toWorld, pointer: () => lastClient, viewport, size,
   emitOps: (ops, files) => emit('canvasOps', ops, undefined, files), notify: msg => emit('editNote', msg), frameBase: () => props.data.frameBase, rev: p => revOf.value[p],
 })
-const { imageUrl, onPaste, onDrop, hasFiles } = pictures
+const { imageUrl, onDrop, hasFiles } = pictures
+/** Ctrl+V arrives as a paste event: a picture on the system clipboard wins, else what was copied on the canvas. */
+function onPaste(e: ClipboardEvent) {
+  pictures.onPaste(e)
+  if (!e.defaultPrevented && canvasLevel.value && canvasFocused.value && !(e.target as HTMLElement)?.closest?.('input, textarea, [contenteditable]') && board_.pasteAtPointer()) e.preventDefault()
+}
 
 // ---- laser pointer, minimap -------------------------------------------------------------------------
 const laser = ref(false)

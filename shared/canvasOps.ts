@@ -255,6 +255,8 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         const n = canvas.notes[op.id]
         if (!n) throw new CanvasError(404, `No such note: ${op.id}`)
         const clean = cleanNote(op.patch ?? {}, n)
+        if (clean.kind === 'image' && !clean.src) throw new CanvasError(400, 'An image needs a source')
+        if (clean.kind !== 'image' && clean.src) delete clean.src // a note that stops being an image drops its picture
         if (op.patch?.bind !== undefined) checkBind(canvas, op.id, clean) // a stale bind elsewhere never blocks moving the note
         canvas.notes[op.id] = clean
         break

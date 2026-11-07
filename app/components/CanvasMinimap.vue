@@ -16,6 +16,7 @@ const oy = computed(() => (H - bounds.value.h * s.value) / 2 - bounds.value.y * 
 const rect = (b: Box) => ({ x: b.x * s.value + ox.value, y: b.y * s.value + oy.value, width: Math.max(b.w * s.value, 1.5), height: Math.max(b.h * s.value, 1.5) })
 
 function jump(e: MouseEvent) {
+  if (e.detail === 0) return // activated from the keyboard: there is no pointer position to jump to
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
   emit('jump', ((e.clientX - r.left) * (W / r.width) - ox.value) / s.value, ((e.clientY - r.top) * (H / r.height) - oy.value) / s.value)
 }

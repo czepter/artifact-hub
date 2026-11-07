@@ -22,9 +22,16 @@ export function useCanvasPictures(o: {
   async function add(files: File[], at: { x: number, y: number }) {
     const ops: CanvasOp[] = [], uploads = new Map<string, { path: string, content: string }>(), ids: string[] = []
     let off = 0
-    for (const f of files.filter(isImageFile).slice(0, 5)) {
+    const pics = files.filter(isImageFile)
+    if (!pics.length && files.length) o.notify('Only PNG, JPEG, WebP and GIF pictures can be added')
+    if (pics.length > 5) o.notify('Five pictures at a time: the rest were left out')
+    let bytes = 0
+    for (const f of pics.slice(0, 5)) {
       try {
-        const img = await prepareImage(f), s = Math.min(1, 480 / Math.max(img.w, img.h)), id = o.newId()
+        const img = await prepareImage(f)
+        bytes += img.base64.length * 0.75
+        if (bytes > 15 * 1024 * 1024) throw new Error('Those pictures are too large together (15 MB at most per paste)')
+        const s = Math.min(1, 480 / Math.max(img.w, img.h)), id = o.newId()
         local[img.path] = img.dataUrl; uploads.set(img.path, { path: img.path, content: img.base64 }); ids.push(id)
         ops.push({ type: 'addNote', id, note: { kind: 'image', src: img.path, x: r1(at.x + off), y: r1(at.y + off), w: r1(img.w * s), h: r1(img.h * s) } })
         off += 24

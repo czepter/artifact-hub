@@ -59,7 +59,7 @@ function onHex(e: Event) { const el = e.target as HTMLInputElement; if (/^#[0-9a
         <ToggleGroupItem v-for="f in FILLS" :key="f" :value="f" size="sm" class="size-6 min-w-6 rounded-full border p-0 data-[state=on]:ring-2 data-[state=on]:ring-primary" :style="{ background: fillOf(f).bg }" :title="f" :aria-label="`Fill ${f}`" />
       </ToggleGroup>
     </div>
-    <div v-if="has('fillStyle')" class="grid gap-1.5">
+    <div v-if="has('fillStyle') && notes.some(n => n.note.fill && n.note.fill !== 'none')" class="grid gap-1.5">
       <Label>Fill style</Label>
       <ToggleGroup type="single" variant="outline" size="sm" class="justify-start" aria-label="Fill style" :model-value="val('fillStyle', 'solid')" @update:model-value="(v) => v && apply({ fillStyle: String(v) })">
         <ToggleGroupItem value="solid" aria-label="Solid fill">Solid</ToggleGroupItem>

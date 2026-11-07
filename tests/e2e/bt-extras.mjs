@@ -44,7 +44,6 @@ ok('clicking the minimap moves the view there', Math.abs(poll1.x - poll0.x) > 40
 await pg.keyboard.press('Shift+Digit1')
 
 // --- command palette
-const stray = await pg.evaluate(() => { const e = new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', ctrlKey: true, bubbles: true, cancelable: true }); document.body.dispatchEvent(e); return e.defaultPrevented })
 await pg.mouse.click(empty.x, empty.y)
 await pg.keyboard.press('Control+k'); await pg.waitForTimeout(400)
 ok('Ctrl+K on the canvas opens the palette', await pg.locator('[role=dialog] [cmdk-input], [role=dialog] input').first().isVisible())

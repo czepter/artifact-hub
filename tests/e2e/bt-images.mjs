@@ -47,6 +47,22 @@ ok('dropping a picture places it where it was dropped', Object.values(c.notes).f
 // text is not a picture
 ok('pasting text does nothing', await firePaste([104, 105], 'text/plain') === false)
 
+// Ctrl+C on the canvas, then a picture on the system clipboard: the picture wins; a plain Ctrl+V pastes the copied note
+const dropped = Object.entries((await t.canvas()).notes).find(([, n]) => n.kind === 'image')
+const ib = await pg.locator(`.note.image[data-id="${dropped[0]}"]`).boundingBox()
+await pg.mouse.click(ib.x + ib.width / 2, ib.y + ib.height / 2)
+await pg.keyboard.press('Control+c')
+await pg.mouse.move(empty.x + 200, empty.y)
+const vP = await t.version()
+ok('a picture on the clipboard is pasted even after Ctrl+C on the canvas', await firePaste(await mkPng(500, 300)) === true)
+await t.settle(4000)
+const cc = await t.canvas()
+ok('...as a new picture, in one version', Object.values(cc.notes).filter(n => n.kind === 'image').length === 2 && await t.version() === vP + 1)
+await pg.mouse.click(empty.x, empty.y); await pg.mouse.move(empty.x + 200, empty.y + 40)
+await pg.keyboard.press('Control+v'); await t.settle(3500)
+ok('Ctrl+V without a picture on the clipboard pastes the copied note', Object.values((await t.canvas()).notes).filter(n => n.kind === 'image').length === 3)
+
+
 // the server's limits
 const api = (body) => fetch(`${process.env.HUB}/api/artifacts/${id}/canvas`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer devtoken' }, body: JSON.stringify(body) })
 const png = Buffer.from(Uint8Array.from(await mkPng(20, 20)))
