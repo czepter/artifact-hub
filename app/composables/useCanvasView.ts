@@ -14,9 +14,9 @@ export function useCanvasView(viewport: Ref<HTMLElement | undefined>, size: { w:
     setTimeout(() => (animate.value = false), 320)
   }
   /** Fits the boxes in the window; with nothing to show it centres the origin. */
-  function fitTo(boxes: Box[], animated = false) {
+  function fitTo(boxes: Box[], animated = false, maxK = 1) {
     if (animated) pulse()
-    set(fitView(boxes, size) ?? { tx: size.w / 2, ty: size.h / 2, k: 1 })
+    set(fitView(boxes, size, 48, maxK) ?? { tx: size.w / 2, ty: size.h / 2, k: 1 })
   }
   const reset = () => set({ tx: 0, ty: 0, k: 1 })
   function zoomAt(factor: number, cx = size.w / 2, cy = size.h / 2) { set(zoomView(get(), factor, cx, cy)) }

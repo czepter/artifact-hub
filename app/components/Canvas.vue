@@ -1,19 +1,17 @@
 <script setup lang="ts">
 import type { Comment, ViewData, Anchor } from '~/types'
 import { orderedNoteIds, type Canvas as CanvasT, type CanvasOp } from '#shared/canvasOps'
-import { type GeomItem, arrowPath, isDirected, penPath, noteBox, round1 } from '#shared/canvasGeometry'
+import { type Box, type GeomItem, HANDLES, arrowPath, boxesIntersect, constrainCreate, isDirected, itemBox, noteBox, normBox, penPath, round1 } from '#shared/canvasGeometry'
 import { deleteOps, nudgeOps } from '#shared/canvasItemOps'
 import type { SelRef } from '~/composables/useCanvasSelection'
 
-import { ArrowLeft, ArrowRight, Download, Maximize2, Minus, Pencil, Play, Plus, Presentation, ScanSearch, SlidersHorizontal, StickyNote, Trash2, X } from '@lucide/vue'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { ArrowLeft, ArrowRight, Maximize2, Minus, Play, Plus, X } from '@lucide/vue'
+import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { HANDLES } from '#shared/canvasGeometry'
 import { boardKey, noteKey, refOfKey, useCanvasSelection } from '~/composables/useCanvasSelection'
 import { ButtonGroup } from '@/components/ui/button-group'
 
-type Tool = 'select' | 'hand' | 'text' | 'artboard' | 'sticky' | 'rect' | 'oval' | 'arrow' | 'line' | 'pen'
+import { TOOL_KEYS, TOOL_ORDER, type Tool } from '~/utils/canvasTools'
 
 const props = defineProps<{
   data: ViewData
@@ -22,6 +20,8 @@ const props = defineProps<{
   commentMode: boolean
   editMode: boolean
   tool: Tool
+  /** Keep the drawing tool after each shape instead of going back to Select. */
+  toolLock?: boolean
   dragMode?: 'free' | 'flow'
   selectedId: string | null
   draft: { board: string, anchor: Anchor } | null
@@ -47,6 +47,7 @@ const emit = defineEmits<{
   canvasOps: [ops: CanvasOp[], merge?: string]
   canvasSelect: [sel: SelRef[]]
   tool: [tool: Tool]
+  toolLock: [locked: boolean]
   play: [path: string]
   present: []
   openTweaks: [path: string]
@@ -71,6 +72,9 @@ const frozenSrc = ref<Record<string, string> | null>(null)
 // Live (not yet committed) geometry while dragging or resizing.
 const boardOv = reactive<Record<string, Partial<Ov>>>({})
 const noteOv = reactive<Record<string, Partial<Ov>>>({})
+const marquee = ref<Box | null>(null)
+const spaceHeld = ref(false)
+let lastWorld: { x: number, y: number } | null = null
 const creating = ref<{ tool: Tool, x: number, y: number, w: number, h: number, pts?: number[][] } | null>(null)
 const editingNote = ref<string | null>(null)
 const renamingBoard = ref<string | null>(null)
@@ -120,7 +124,7 @@ const allItems = computed<GeomItem[]>(() => [
   ...notes.value.map(n => ({ key: noteKey(n.id), kind: n.kind, x: n.x, y: n.y, w: n.w, h: isDirected(n.kind) ? n.h : (n.h || noteBox(n).h), points: n.points, locked: n.locked })),
 ])
 const selection = useCanvasSelection(allItems)
-const gestures = useCanvasGestures(selection, boardOv, noteOv, k)
+const gestures = useCanvasGestures(selection, boardOv, noteOv, k, () => allItems.value.filter(i => !selection.has(i.key)).map(itemBox))
 const selectedBoard = computed(() => selection.refs.value.find(r => r.type === 'board')?.id ?? null)
 
 // ---- view transform --------------------------------------------------------------------------
@@ -203,6 +207,9 @@ type Drag =
   | { kind: 'pan', x: number, y: number, tx: number, ty: number, moved: boolean }
   | { kind: 'create', tool: Tool, sx: number, sy: number, moved: boolean }
   | { kind: 'pen', pts: number[][], moved: boolean }
+  | { kind: 'marquee', sx: number, sy: number, additive: boolean, moved: boolean }
+  /** Shift pressed on a board: a click toggles it in the selection, a drag becomes an additive marquee. */
+  | { kind: 'shiftpress', key: string, x: number, y: number, additive: boolean, moved: boolean }
 let drag: Drag | null = null
 let justDragged = false
 const uid = () => 'nt' + Math.random().toString(36).slice(2, 8)
@@ -215,8 +222,6 @@ const sendNudge = (...ops: CanvasOp[]) => { if (ops.length) emit('canvasOps', op
 function capture(e: PointerEvent) { try { viewport.value!.setPointerCapture(e.pointerId) } catch {} }
 
 const creationTool = computed(() => canvasLevel.value && props.tool !== 'select' && props.tool !== 'hand')
-/** Board header buttons keep their press to themselves, unless a drawing tool is active. */
-function hdrDown(e: PointerEvent) { if (!creationTool.value) e.stopPropagation() }
 
 function onPointerDown(e: PointerEvent) {
   if (!isCanvas.value || focusBoard.value || (e.button !== 0 && e.button !== 1)) return
@@ -232,19 +237,35 @@ function onPointerDown(e: PointerEvent) {
     capture(e)
     return
   }
+  // Space held: the press pans, even over boards and notes.
+  // On empty canvas (Select tool) a drag draws a selection rectangle; the Hand tool, Space and the middle button pan.
+  if (canvasLevel.value && e.button === 0 && props.tool === 'select' && !spaceHeld.value) {
+    const w = toWorld(e.clientX, e.clientY)
+    drag = { kind: 'marquee', sx: w.x, sy: w.y, additive: e.shiftKey, moved: false }
+    return // the pointer is captured once it moves, so a double-click on a title still reaches it
+  }
   drag = { kind: 'pan', x: e.clientX, y: e.clientY, tx: tx.value, ty: ty.value, moved: false }
 }
 
+function onShieldClick(e: MouseEvent, b: BoardView) { if (!justDragged && !e.shiftKey) selectBoard(b.path) }
+
 function onBoardDown(e: PointerEvent, b: BoardView) {
-  if (!canvasLevel.value || props.tool !== 'select' || e.button !== 0) return
+  if (!canvasLevel.value || props.tool !== 'select' || e.button !== 0 || spaceHeld.value) return
+  if (e.shiftKey) { // click toggles, drag draws an additive marquee (the press never reaches the iframe: the shield owns it)
+    e.stopPropagation(); e.preventDefault()
+    drag = { kind: 'shiftpress', key: boardKey(b.path), x: e.clientX, y: e.clientY, additive: true, moved: false }
+    return
+  }
   gestures.startMove(e, boardKey(b.path))
 }
 function onNoteDown(e: PointerEvent, n: NoteView) {
-  if (!canvasLevel.value || props.tool !== 'select' || e.button !== 0 || editingNote.value === n.id) return
+  if (!canvasLevel.value || props.tool !== 'select' || e.button !== 0 || editingNote.value === n.id || spaceHeld.value) return
+  if (e.shiftKey) { e.stopPropagation(); e.preventDefault(); selection.toggle(noteKey(n.id)); return }
   gestures.startMove(e, noteKey(n.id))
 }
 
 function onPointerMove(e: PointerEvent) {
+  if (viewport.value) lastWorld = toWorld(e.clientX, e.clientY)
   if (gestures.active()) { if (gestures.onMove(e) === 'start') capture(e); return }
   if (!drag) return
   const d = drag
@@ -252,8 +273,25 @@ function onPointerMove(e: PointerEvent) {
     const w = toWorld(e.clientX, e.clientY)
     if (!d.moved && Math.hypot(w.x - d.sx, w.y - d.sy) * k.value < 4) return
     d.moved = true
+    // Shift: square / circle, or a line at a multiple of 15 degrees. Alt: draw from the centre.
     const lined = d.tool === 'arrow' || d.tool === 'line'
-    creating.value = lined ? { tool: d.tool, x: d.sx, y: d.sy, w: w.x - d.sx, h: w.y - d.sy } : { tool: d.tool, x: Math.min(d.sx, w.x), y: Math.min(d.sy, w.y), w: Math.abs(w.x - d.sx), h: Math.abs(w.y - d.sy) }
+    creating.value = { tool: d.tool, ...constrainCreate(lined ? 'line' : 'box', { x: d.sx, y: d.sy }, w, { shift: e.shiftKey, alt: e.altKey }) }
+    return
+  }
+  if (d.kind === 'marquee' || d.kind === 'shiftpress') {
+    const w = toWorld(e.clientX, e.clientY)
+    if (d.kind === 'shiftpress') {
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return
+      const s = toWorld(d.x, d.y)
+      drag = { kind: 'marquee', sx: s.x, sy: s.y, additive: true, moved: true }
+      capture(e)
+      marquee.value = normBox(s, w)
+      return
+    }
+    if (!d.moved && Math.hypot(w.x - d.sx, w.y - d.sy) * k.value < 4) return
+    d.moved = true
+    capture(e)
+    marquee.value = normBox({ x: d.sx, y: d.sy }, w)
     return
   }
   if (d.kind === 'pen') {
@@ -285,7 +323,7 @@ function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeo
       nextTick(() => { selectNote(id); editingNote.value = id })
     } else if (tool === 'arrow' || tool === 'line') {
       const w = d.moved ? c.w : 160, h = d.moved ? c.h : 0
-      send({ type: 'addNote', id, note: { kind: tool, x: round(d.sx), y: round(d.sy), w: round(w), h: round(h) } })
+      send({ type: 'addNote', id, note: { kind: tool, x: round(d.moved ? c.x : d.sx), y: round(d.moved ? c.y : d.sy), w: round(w), h: round(h) } })
       nextTick(() => selectNote(id))
     } else {
       const w = d.moved && c.w > 8 && c.h > 8 ? c.w : 160, h = d.moved && c.w > 8 && c.h > 8 ? c.h : 100
@@ -293,7 +331,7 @@ function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeo
       nextTick(() => selectNote(id))
     }
   }
-  emit('tool', 'select')
+  if (!props.toolLock) emit('tool', 'select')
 }
 
 function onPointerUp(e: PointerEvent) {
@@ -304,8 +342,20 @@ function onPointerUp(e: PointerEvent) {
   try { viewport.value!.releasePointerCapture(e.pointerId) } catch {}
   if (done.moved) { // move, resize and endpoint drags end the same way: every live override goes out as one batch
     justDragged = true; setTimeout(() => (justDragged = false), 0)
-    send(...done.ops)
+    if (done.clone) board_.cloneBy(done.clone) // Alt-drag: copies land where the drag ended
+    else send(...done.ops)
     nextTick(done.clear)
+    return
+  }
+  if (d?.kind === 'shiftpress') { selection.toggle(d.key); justDragged = true; setTimeout(() => (justDragged = false), 0); return } // the click that follows must not reselect
+  if (d?.kind === 'marquee') {
+    const box = marquee.value
+    marquee.value = null
+    if (d.moved && box) {
+      justDragged = true; setTimeout(() => (justDragged = false), 0)
+      const hits = allItems.value.filter(i => !i.locked && boxesIntersect(itemBox(i), box)).map(i => i.key) // locked items are not marquee-selected
+      selection.set(d.additive ? [...selection.keys.value, ...hits] : hits)
+    }
     return
   }
   if (!d) return
@@ -354,17 +404,11 @@ function noteRef(el: unknown, id: string) {
   if (editingNote.value === id) { if (h.dataset.f !== '1') { h.dataset.f = '1'; nextTick(() => focusEl(h)) } } else delete h.dataset.f
 }
 function focusEl(el: unknown) { const n = el as HTMLElement | null; if (n) { n.focus(); const r = document.createRange(); r.selectNodeContents(n); const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r) } }
-/** Focus and select the rename field once when it appears. */
-function focusRename(c: unknown) {
-  const el = ((c as { $el?: unknown } | null)?.$el ?? c) as HTMLInputElement | null
-  if (el && el.dataset && el.dataset.f !== '1') { el.dataset.f = '1'; nextTick(() => { el.focus(); el.select() }) }
-}
 function startRename(b: BoardView) { if (canvasLevel.value) { selectBoard(b.path); renamingBoard.value = b.path } }
-function commitRename(b: BoardView, e: Event, cancel = false) {
+function commitRename(b: BoardView, v: string | null) { // null: cancelled
   if (renamingBoard.value !== b.path) return
   renamingBoard.value = null
-  const v = (e.target as HTMLInputElement).value.trim()
-  if (!cancel && v && v !== b.title) send({ type: 'updateBoard', path: b.path, patch: { title: v } })
+  if (v && v !== b.title) send({ type: 'updateBoard', path: b.path, patch: { title: v } })
 }
 
 // ---- right-click menu ------------------------------------------------------------------------
@@ -386,15 +430,27 @@ function ctxDeleteBoard() {
 function ctxAddBoard() { send({ type: 'addBoard', title: 'Board', x: round(ctx.value.x), y: round(ctx.value.y), w: 1280, h: 800 }) }
 function ctxAddSticky() { send({ type: 'addNote', id: uid(), note: { kind: 'sticky', x: round(ctx.value.x), y: round(ctx.value.y), w: 240, text: '' } as any }) }
 
-const TOOL_KEYS: Record<string, Tool> = { v: 'select', h: 'hand', t: 'text', a: 'artboard', s: 'sticky', r: 'rect', o: 'oval', l: 'arrow', p: 'pen' }
 
 interface KeyInfo { key: string, code?: string, mod?: boolean, shift?: boolean, alt?: boolean }
 
 /** Ctrl/Cmd combinations the canvas owns. Returns true when handled (the caller then blocks the browser's own action). */
 function handleMod(k: KeyInfo): boolean {
   if (!canvasLevel.value) return false
-  if (k.code === 'KeyA' && !k.shift && !k.alt) { selection.selectAll(); return true }
+  const c = k.code
+  if (k.alt) return false
+  if (c === 'KeyA' && !k.shift) { selection.selectAll(); return true }
+  if (c === 'KeyC' && !k.shift) return board_.copy()
+  if (c === 'KeyV' && !k.shift) return board_.pasteAtPointer()
+  if (c === 'KeyD' && !k.shift) return board_.duplicate()
+  if ((c === 'BracketRight' || c === 'BracketLeft') && !k.shift) return board_.reorder(c === 'BracketRight' ? 'front' : 'back')
   return false
+}
+
+// ---- copy, paste, duplicate, z-order ---------------------------------------------------------------
+const board_ = useCanvasClipboard({ canvas: () => cv.value, selection, send, newId: uid, pointer: () => lastWorld })
+function zoomToSelection() {
+  const b = selection.bbox.value
+  if (b) view_.fitTo([b], true, 2)
 }
 
 function handleKey(input: string | KeyInfo) {
@@ -411,7 +467,14 @@ function handleKey(input: string | KeyInfo) {
   if (canvasLevel.value) {
     const t = TOOL_KEYS[key.toLowerCase()]
     if (t && key.length === 1) { emit('tool', t); return }
-    if (key === 'Escape') { emit('tool', 'select'); selection.clear(); editingNote.value = null; return }
+    // Keys 1-9 pick the toolbar slots; Shift+1 fits everything and Shift+2 the selection. By physical key, so it works on any layout.
+    const digit = /^Digit([1-9])$/.exec(k.code ?? '')?.[1]
+    if (digit && !k.shift) { emit('tool', TOOL_ORDER[+digit - 1]!); return }
+    if (k.shift && k.code === 'Digit1') { fit(true); return }
+    if (k.shift && k.code === 'Digit2') { zoomToSelection(); return }
+    if (key.toLowerCase() === 'q' && creationTool.value) { emit('toolLock', !props.toolLock); return } // lock the drawing tool
+    if ((k.code === 'BracketRight' || k.code === 'BracketLeft') && canvasFocused.value) { board_.reorder(k.code === 'BracketRight' ? 'forward' : 'backward'); return }
+    if (key === 'Escape') { emit('tool', 'select'); emit('toolLock', false); selection.clear(); editingNote.value = null; marquee.value = null; return }
     if (canvasFocused.value) {
       if ((key === 'Delete' || key === 'Backspace') && selection.count.value) { deleteSelection(); return }
       if (key.startsWith('Arrow') && selection.count.value) { nudge(key); return }
@@ -452,6 +515,8 @@ function onWindowPointer(e: PointerEvent) {
   canvasFocused.value = !!viewport.value?.contains(t) && !t.closest('[data-toolbar], .zoom, .focusbar, [data-ui], button, input, textarea')
 }
 
+function onKeyUp(e: KeyboardEvent) { shiftHeld = e.shiftKey; if (e.key === ' ') spaceHeld.value = false }
+
 function onKey(e: KeyboardEvent) {
   shiftHeld = e.shiftKey
   if ((e.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable]')) return
@@ -462,6 +527,8 @@ function onKey(e: KeyboardEvent) {
     if (mod && !e.altKey && canvasFocused.value && handleMod({ key: e.key, code: e.code, mod, shift: e.shiftKey, alt: e.altKey })) e.preventDefault()
     return
   }
+  // Hold Space for a temporary hand (only once the canvas has been clicked, so Space on a focused button still presses it).
+  if (e.key === ' ' && canvasLevel.value && canvasFocused.value) { e.preventDefault(); spaceHeld.value = true; return }
   if (focusBoard.value && [' ', 'PageDown', 'PageUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault()
   if (canvasLevel.value && canvasFocused.value && e.key.startsWith('Arrow') && selection.count.value) e.preventDefault()
   handleKey({ key: e.key, code: e.code, shift: e.shiftKey })
@@ -638,13 +705,15 @@ onMounted(() => {
   window.addEventListener('message', onMessage)
   window.addEventListener('keydown', onKey)
   window.addEventListener('pointerdown', onWindowPointer, true)
-  window.addEventListener('keyup', e => { shiftHeld = e.shiftKey })
+  window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('blur', () => (spaceHeld.value = false))
   viewport.value!.addEventListener('wheel', onWheel, { passive: false })
 })
 onBeforeUnmount(() => {
   ro?.disconnect()
   window.removeEventListener('message', onMessage)
   window.removeEventListener('keydown', onKey)
+  window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('pointerdown', onWindowPointer, true)
 })
 watch(isCanvas, () => nextTick(() => fit()))
@@ -656,7 +725,7 @@ watch(isCanvas, () => nextTick(() => fit()))
   <div
     ref="viewport"
     class="canvas"
-    :class="{ panning, page: !isCanvas, focus: !!focusBoard, tool: canvasLevel && tool !== 'select' && tool !== 'hand', hand: tool === 'hand' && canvasLevel }"
+    :class="{ panning, page: !isCanvas, focus: !!focusBoard, tool: canvasLevel && tool !== 'select' && tool !== 'hand', hand: (tool === 'hand' || spaceHeld) && canvasLevel }"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
@@ -674,27 +743,10 @@ watch(isCanvas, () => nextTick(() => fit()))
         :class="{ interacting: interacting === b.path, selected: selection.has(boardKey(b.path)) && !focusBoard && isCanvas, full: focusBoard === b.path }"
         :style="{ left: b.x + 'px', top: b.y + 'px', width: dims(b).w + 'px', height: dims(b).h + 'px', visibility: focusBoard && focusBoard !== b.path ? 'hidden' : 'visible' }"
       >
-        <div v-if="isCanvas && !focusBoard" class="board-title" :style="{ transform: `scale(${1 / k})`, width: b.w * k + 'px' }">
-          <Input
-            v-if="renamingBoard === b.path"
-            :ref="focusRename"
-            class="rename"
-            data-ui
-            :default-value="b.title"
-            aria-label="Board name"
-            @keydown.enter="($event.target as HTMLInputElement).blur()"
-            @keydown.esc.stop="commitRename(b, $event, true)"
-            @blur="commitRename(b, $event)"
-            @pointerdown.stop
-          />
-          <span v-else class="t" :class="{ renamable: canvasLevel }" @dblclick.stop="startRename(b)">{{ b.title }}</span>
-          <span class="acts" data-ui>
-            <Button v-if="b.w * k > 150" variant="ghost" size="icon-xs" title="Tweaks" aria-label="Tweaks" @click.stop="emit('openTweaks', b.path)" @pointerdown="hdrDown"><SlidersHorizontal /></Button>
-            <Button v-if="b.w * k > 190" variant="ghost" size="icon-xs" title="Download this board" aria-label="Download this board" @click.stop="emit('exportBoard', b.path)" @pointerdown="hdrDown"><Download /></Button>
-            <Button class="expand" variant="ghost" size="icon-xs" title="Open full window (F)" aria-label="Open full window" @click.stop="enterFocus(b.path)" @pointerdown="hdrDown"><Maximize2 /></Button>
-            <Button v-if="b.w * k > 130" class="play" variant="secondary" size="xs" title="Play this board" @click.stop="emit('play', b.path)" @pointerdown="hdrDown"><Play class="size-2.5 fill-current" />PLAY</Button>
-          </span>
-        </div>
+        <CanvasBoardTitle
+          v-if="isCanvas && !focusBoard" :board="b" :k="k" :can-edit="canvasLevel" :renaming="renamingBoard === b.path" :drawing="creationTool"
+          @rename="startRename(b)" @commit="(v) => commitRename(b, v)" @tweaks="emit('openTweaks', b.path)" @export="emit('exportBoard', b.path)" @focus="enterFocus(b.path)" @play="emit('play', b.path)"
+        />
         <iframe
           :ref="(el) => { if (el) frames.set(b.path, el as HTMLIFrameElement); else frames.delete(b.path) }"
           :src="b.src"
@@ -709,7 +761,7 @@ watch(isCanvas, () => nextTick(() => fit()))
           :class="{ movable: canvasLevel && tool === 'select' }"
           :title="canvasLevel ? 'Drag to move, double-click to edit its content' : (b.interactive ? 'Double-click to interact' : '')"
           @pointerdown="onBoardDown($event, b)"
-          @click="selectBoard(b.path)"
+          @click="onShieldClick($event, b)"
           @dblclick="canvasLevel ? enterFocus(b.path) : (b.interactive ? (interacting = b.path) : enterFocus(b.path))"
         />
       </div>
@@ -804,6 +856,10 @@ watch(isCanvas, () => nextTick(() => fit()))
         </template>
       </template>
 
+      <!-- snapping guides and the selection rectangle -->
+      <div v-for="(g, i) in gestures.guides.value" :key="'g' + i" class="guide" :style="g.axis === 'x' ? { left: g.pos + 'px', top: g.from + 'px', width: 1 / k + 'px', height: g.to - g.from + 'px' } : { top: g.pos + 'px', left: g.from + 'px', height: 1 / k + 'px', width: g.to - g.from + 'px' }" />
+      <div v-if="marquee" class="marquee" :style="{ left: marquee.x + 'px', top: marquee.y + 'px', width: marquee.w + 'px', height: marquee.h + 'px', borderWidth: 1 / k + 'px' }" />
+
       <!-- shape being drawn -->
       <template v-if="creating && inCanvasPage">
         <div v-if="creating.tool === 'artboard'" class="draw artboard" :style="{ left: creating.x + 'px', top: creating.y + 'px', width: creating.w + 'px', height: creating.h + 'px' }" />
@@ -842,35 +898,12 @@ watch(isCanvas, () => nextTick(() => fit()))
     </div>
   </div>
   </ContextMenuTrigger>
-  <ContextMenuContent class="w-56">
-    <template v-if="ctx.type === 'board' && ctxBoard">
-      <ContextMenuItem @select="emit('play', ctxBoard.path)"><Play />Play</ContextMenuItem>
-      <ContextMenuItem @select="enterFocus(ctxBoard.path)"><Maximize2 />Open full window<ContextMenuShortcut>F</ContextMenuShortcut></ContextMenuItem>
-      <ContextMenuSeparator />
-      <ContextMenuItem @select="emit('openTweaks', ctxBoard.path)"><SlidersHorizontal />Tweaks</ContextMenuItem>
-      <ContextMenuItem @select="emit('exportBoard', ctxBoard.path)"><Download />Download board</ContextMenuItem>
-      <template v-if="canvasLevel">
-        <ContextMenuItem @select="startRename(ctxBoard)"><Pencil />Rename</ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem variant="destructive" @select="ctxDeleteBoard"><Trash2 />Delete board<ContextMenuShortcut>⌫</ContextMenuShortcut></ContextMenuItem>
-      </template>
-    </template>
-    <template v-else-if="ctx.type === 'note'">
-      <ContextMenuItem :disabled="!canvasLevel" variant="destructive" @select="send({ type: 'deleteNote', id: ctx.id })"><Trash2 />Delete</ContextMenuItem>
-    </template>
-    <template v-else>
-      <template v-if="canvasLevel">
-        <ContextMenuItem @select="ctxAddBoard"><Plus />Add board here</ContextMenuItem>
-        <ContextMenuItem @select="ctxAddSticky"><StickyNote />Add sticky note</ContextMenuItem>
-        <ContextMenuSeparator />
-      </template>
-      <ContextMenuItem @select="fit(true)"><ScanSearch />Fit all<ContextMenuShortcut>0</ContextMenuShortcut></ContextMenuItem>
-      <ContextMenuItem @select="zoomAt(1.2)"><Plus />Zoom in</ContextMenuItem>
-      <ContextMenuItem @select="zoomAt(1 / 1.2)"><Minus />Zoom out</ContextMenuItem>
-      <ContextMenuSeparator />
-      <ContextMenuItem @select="emit('present')"><Presentation />Present canvas</ContextMenuItem>
-    </template>
-  </ContextMenuContent>
+  <CanvasContextMenu
+    :type="ctx.type" :id="ctx.id" :canvas-level="canvasLevel" :has-clip="board_.hasClip.value"
+    @play="ctxBoard && emit('play', ctxBoard.path)" @focus="ctxBoard && enterFocus(ctxBoard.path)" @tweaks="ctxBoard && emit('openTweaks', ctxBoard.path)" @export="ctxBoard && emit('exportBoard', ctxBoard.path)"
+    @duplicate="board_.duplicate" @rename="ctxBoard && startRename(ctxBoard)" @delete-board="ctxDeleteBoard" @copy="board_.copy" @delete-note="send({ type: 'deleteNote', id: ctx.id })"
+    @reorder="board_.reorder" @add-board="ctxAddBoard" @add-sticky="ctxAddSticky" @paste="board_.pasteAt(ctx)" @fit="fit(true)" @zoom="zoomAt" @present="emit('present')"
+  />
   </ContextMenu>
 </template>
 
@@ -893,10 +926,6 @@ watch(isCanvas, () => nextTick(() => fit()))
 .board-shield { position: absolute; inset: 0; cursor: inherit; }
 .board-shield.movable { cursor: move; }
 .canvas.tool .board-shield { cursor: crosshair; }
-.board-title { position: absolute; left: 0; bottom: 100%; padding-bottom: 6px; transform-origin: 0 100%; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-.board-title .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
-.board-title .rename { flex: 1; min-width: 0; font: inherit; padding: 1px 4px; border: 1px solid var(--brand); border-radius: 3px; background: var(--panel); color: var(--fg); }
-.board-title .acts { display: flex; gap: 2px; align-items: center; }
 .note { position: absolute; font-size: 14px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; pointer-events: none; }
 .note.editable { pointer-events: auto; cursor: move; }
 .note.title1 { font-size: 40px; font-weight: 650; color: var(--fg); line-height: 1.15; }
@@ -904,13 +933,14 @@ watch(isCanvas, () => nextTick(() => fit()))
 .note.text { color: var(--fg); }
 .note .ntext { outline: none; min-height: 1.2em; cursor: inherit; }
 .note .ntext[contenteditable="true"] { user-select: text; -webkit-user-select: text; }
-.board-title .rename { user-select: text; -webkit-user-select: text; }
 .note.editing .ntext { cursor: text; }
 .note .ntext:empty::before { content: attr(data-placeholder); opacity: .45; }
 .note.vec { overflow: visible; }
 .note.vec.editable { pointer-events: none; }
 .note.vec.editable :deep(line), .note.vec.editable :deep(path), .note.vec.editable :deep(polygon) { pointer-events: stroke; cursor: move; }
 .note.vec.editable :deep(rect), .note.vec.editable :deep(ellipse) { pointer-events: visiblePainted; cursor: move; }
+.guide { position: absolute; background: var(--brand); pointer-events: none; z-index: 4; }
+.marquee { position: absolute; border: solid #3b82f6; background: rgba(59, 130, 246, .08); pointer-events: none; box-sizing: border-box; }
 .selbox { position: absolute; border: solid #3b82f6; pointer-events: none; box-sizing: border-box; }
 .hd { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid #3b82f6; border-radius: 2px; box-sizing: border-box; z-index: 5; }
 .draw { position: absolute; border: 2px dashed #3b82f6; background: rgba(59, 130, 246, .08); pointer-events: none; box-sizing: border-box; }

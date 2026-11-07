@@ -47,7 +47,7 @@ const b1 = await pg.locator('[data-board]').first().boundingBox()
 await pg.mouse.move(b1.x + b1.width / 2, b1.y + b1.height / 2); await pg.mouse.down(); await pg.mouse.move(b1.x + b1.width / 2 + 40, b1.y + b1.height / 2 + 30, { steps: 5 }); await pg.mouse.move(b1.x + b1.width / 2 + 90, b1.y + b1.height / 2 + 60, { steps: 5 }); await pg.mouse.up()
 await pg.waitForTimeout(300)
 const b1m = await pg.locator('[data-board]').first().boundingBox()
-ok('board dragged ~90/60 screen px', Math.abs(b1m.x - b1.x - 90) <= 3 && Math.abs(b1m.y - b1.y - 60) <= 3, [b1m.x - b1.x, b1m.y - b1.y])
+ok('board dragged ~90/60 screen px (snapping may pull it a few px)', Math.abs(b1m.x - b1.x - 90) <= 8 && Math.abs(b1m.y - b1.y - 60) <= 3, [b1m.x - b1.x, b1m.y - b1.y])
 const se = pg.locator('.hd').nth(4)   // 'se' handle is 5th in HANDLES
 const hb = await se.boundingBox()
 await pg.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2); await pg.mouse.down(); await pg.mouse.move(hb.x + 40, hb.y + 30, { steps: 5 }); await pg.mouse.up()

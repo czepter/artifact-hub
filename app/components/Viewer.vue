@@ -69,6 +69,8 @@ const editNote = ref('')
 const history = ref<{ paths: string[], toVersion: number }[]>([])
 const pending = new Map<string, Record<string, unknown>[]>()
 const tool = ref<Tool>('select')
+const toolLock = ref(false)
+watch(tool, (t) => { if (t === 'select' || t === 'hand') toolLock.value = false })
 // Dragging moves things freely by default; 'flow' makes a drag reorder elements inside the page flow instead.
 const dragMode = ref<'free' | 'flow'>('free')
 onMounted(() => { try { if (localStorage.getItem('hub_dragmode') === 'flow') dragMode.value = 'flow' } catch {} })
@@ -108,7 +110,7 @@ async function toggleEdit() {
   baseVersion = data.value.artifact.live
   history.value = []
   editStatus.value = 'idle'; editMessage.value = ''; editNote.value = ''; sel.value = null; canvasSel.value = []
-  tool.value = 'select'; panelTab.value = 'props'
+  tool.value = 'select'; toolLock.value = false; panelTab.value = 'props'
   editMode.value = true
   const c = canvasRef.value
   const n = Object.keys(data.value.canvas?.boards ?? {}).length
@@ -766,6 +768,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         :comment-mode="commentMode"
         :edit-mode="editMode"
         :tool="tool"
+        :tool-lock="toolLock"
         :drag-mode="dragMode"
         :selected-id="selectedId"
         :draft="draft"
@@ -786,13 +789,14 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         @canvas-ops="onCanvasOps"
         @canvas-select="(s) => (canvasSel = s)"
         @tool="(t) => (tool = t)"
+        @tool-lock="(l) => (toolLock = l)"
         @play="playBoard"
         @present="present"
         @open-tweaks="onOpenTweaks"
         @export-board="exportBoard"
         @pins-changed="(s) => Object.assign(located, s)"
       />
-      <CanvasToolbar v-if="editMode && hasBoards && !canvasRef?.focusBoard && !presenting" v-model:tool="tool" />
+      <CanvasToolbar v-if="editMode && hasBoards && !canvasRef?.focusBoard && !presenting" v-model:tool="tool" :tool-lock="toolLock" @tool-lock="(l) => (toolLock = l)" />
       <Button v-if="presenting && !data.canvas?.boards" class="exit-present" variant="secondary" size="icon-sm" aria-label="Exit presentation (Esc)" title="Exit (Esc)" @click="endPresent"><X /></Button>
       <div v-if="commentMode && !draft && !presenting" class="hint" role="status">Click anything on the page to comment on it</div>
 

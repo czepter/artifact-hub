@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { CanvasOp } from '#shared/canvasOps'
-import { boardKey, deleteOps, noteKey } from '#shared/canvasItemOps'
-import { Play, Plus, Trash2, Pencil } from '@lucide/vue'
+import { boardKey, deleteOps, itemsFromCanvas, noteKey, patchOps } from '#shared/canvasItemOps'
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceBetween, Play, Plus, Trash2, Pencil } from '@lucide/vue'
+import { ButtonGroup } from '@/components/ui/button-group'
+import { alignPatches, distributePatches, type AlignMode } from '#shared/canvasGeometry'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -21,6 +23,14 @@ const note = computed(() => (one.value?.type === 'note' ? props.canvas?.notes?.[
 const many = computed(() => props.sel.length > 1)
 const manyLabel = computed(() => { const b = props.sel.filter(s => s.type === 'board').length, n = props.sel.length - b; return [b && `${b} board${b === 1 ? '' : 's'}`, n && `${n} note${n === 1 ? '' : 's'}`].filter(Boolean).join(' and ') })
 const emitOp = (op: CanvasOp) => emit('ops', [op])
+const ALIGN: { mode: AlignMode, label: string, icon: any }[] = [
+  { mode: 'left', label: 'Align left', icon: AlignStartVertical }, { mode: 'hcenter', label: 'Align horizontal centres', icon: AlignCenterVertical }, { mode: 'right', label: 'Align right', icon: AlignEndVertical },
+  { mode: 'top', label: 'Align top', icon: AlignStartHorizontal }, { mode: 'vcenter', label: 'Align vertical centres', icon: AlignCenterHorizontal }, { mode: 'bottom', label: 'Align bottom', icon: AlignEndHorizontal },
+]
+const selItems = computed(() => itemsFromCanvas(props.canvas, props.sel))
+const movable = computed(() => selItems.value.filter(i => !i.locked).length)
+const align = (mode: AlignMode) => emit('ops', patchOps(alignPatches(selItems.value, mode)))
+const distribute = (axis: 'x' | 'y') => emit('ops', patchOps(distributePatches(selItems.value, axis)))
 function removeSelection() {
   const locked = (s: { type: string, id: string }) => !!(s.type === 'board' ? props.canvas?.boards?.[s.id] : props.canvas?.notes?.[s.id])?.locked
   emit('ops', deleteOps(props.sel.map(s => ({ key: s.type === 'board' ? boardKey(s.id) : noteKey(s.id), locked: locked(s) }))))
@@ -122,7 +132,20 @@ function addBoard() {
     <template v-else-if="many">
       <section class="grid gap-2">
         <h3 class="sec">{{ sel.length }} items</h3>
-        <p class="hint">{{ manyLabel }} selected. Drag to move them together, or use a corner handle to resize them as a group.</p>
+        <p class="hint">{{ manyLabel }} selected. Drag to move them together, or use a handle to resize them as a group. Shift-click adds or removes one.</p>
+        <h4 class="sub">Align</h4>
+        <div class="flex flex-wrap gap-2">
+          <ButtonGroup>
+            <Button v-for="a in ALIGN.slice(0, 3)" :key="a.mode" size="icon-xs" variant="outline" :title="a.label" :aria-label="a.label" :disabled="movable < 2" @click="align(a.mode)"><component :is="a.icon" /></Button>
+          </ButtonGroup>
+          <ButtonGroup>
+            <Button v-for="a in ALIGN.slice(3)" :key="a.mode" size="icon-xs" variant="outline" :title="a.label" :aria-label="a.label" :disabled="movable < 2" @click="align(a.mode)"><component :is="a.icon" /></Button>
+          </ButtonGroup>
+          <ButtonGroup>
+            <Button size="icon-xs" variant="outline" title="Distribute horizontally" aria-label="Distribute horizontally" :disabled="movable < 3" @click="distribute('x')"><AlignHorizontalSpaceBetween /></Button>
+            <Button size="icon-xs" variant="outline" title="Distribute vertically" aria-label="Distribute vertically" :disabled="movable < 3" @click="distribute('y')"><AlignVerticalSpaceBetween /></Button>
+          </ButtonGroup>
+        </div>
         <div><Button size="xs" variant="outline" class="text-destructive" @click="confirmDeleteMany = true"><Trash2 />Delete all</Button></div>
       </section>
       <AlertDialog v-model:open="confirmDeleteMany">
@@ -152,5 +175,6 @@ function addBoard() {
 
 <style scoped>
 .sec { margin: 0 0 2px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 600; }
+.sub { margin: 0; font-size: 12px; font-weight: 500; }
 .hint { margin: 0; color: var(--muted-foreground); font-size: 12px; }
 </style>
