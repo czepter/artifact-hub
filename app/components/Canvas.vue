@@ -6,7 +6,7 @@ import { deleteOps, detachBinds, groupKeys, groupOps, lockOps, nudgeOps, patchOp
 import type { NoteView } from '~/utils/canvasView'
 import type { SelRef } from '~/composables/useCanvasSelection'
 
-import { ArrowLeft, ArrowRight, Maximize2, Minus, Play, Plus, X } from '@lucide/vue'
+import { ArrowLeft, ArrowRight, Lock, Maximize2, Minus, Play, Plus, X } from '@lucide/vue'
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Button } from '@/components/ui/button'
 import { boardKey, noteKey, refOfKey, useCanvasSelection } from '~/composables/useCanvasSelection'
@@ -279,7 +279,7 @@ function eraseAt(a: { x: number, y: number }, b: { x: number, y: number }) {
   const tol = 5 / k.value, steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * k.value / 5)), hit = new Set(erased.value)
   for (let i = 0; i <= steps; i++) {
     const p = { x: a.x + (b.x - a.x) * i / steps, y: a.y + (b.y - a.y) * i / steps }
-    for (const n of notes.value) if (!n.locked && noteHit(n, p, tol)) hit.add(n.id)
+    for (const n of notes.value) if (!n.locked && noteHit(noteH[n.id] ? { ...n, h: noteH[n.id]! } : n, p, tol)) hit.add(n.id)
   }
   if (hit.size !== erased.value.length) erased.value = [...hit]
 }
@@ -295,7 +295,7 @@ function onBoardDown(e: PointerEvent, b: BoardView) {
 }
 function onNoteDown(e: PointerEvent, n: NoteView) {
   if (!canvasLevel.value || props.tool !== 'select' || e.button !== 0 || editingNote.value === n.id || spaceHeld.value) return
-  if (e.shiftKey) { e.stopPropagation(); e.preventDefault(); selection.toggle(noteKey(n.id)); return }
+  if (e.shiftKey) { e.stopPropagation(); e.preventDefault(); selection.toggleGroup(noteKey(n.id)); return }
   gestures.startMove(e, noteKey(n.id))
 }
 
@@ -346,7 +346,7 @@ function onPointerMove(e: PointerEvent) {
   tx.value = d.tx + dx; ty.value = d.ty + dy
 }
 
-function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeof creating.value>) {
+function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeof creating.value>, alt = false) {
   const tool = d.tool
   if (tool === 'artboard') {
     const w = d.moved && c.w > 20 && c.h > 20 ? c.w : 1280, h = d.moved && c.w > 20 && c.h > 20 ? c.h : 800
@@ -362,7 +362,7 @@ function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeo
       const x = round(d.moved ? c.x : d.sx), y = round(d.moved ? c.y : d.sy)
       // An arrow drawn from or to a board or note attaches to it.
       const tol = 8 / k.value, a = d.moved ? bindTargetAt({ x, y }, bindTargets.value, tol) : null, z = d.moved ? bindTargetAt({ x: x + w, y: y + h }, bindTargets.value, tol) : null
-      const ref = (t: BindTargetBox | null) => (t && tool === 'arrow' ? { type: t.type, id: t.id } : undefined)
+      const ref = (t: BindTargetBox | null) => (t && tool === 'arrow' && !alt ? { type: t.type, id: t.id } : undefined)
       const bind = ref(a) || ref(z) ? { ...(ref(a) ? { start: ref(a) } : {}), ...(ref(z) ? { end: ref(z) } : {}) } : undefined
       send({ type: 'addNote', id, note: { kind: tool, x, y, w: round(w), h: round(h), ...(bind ? { bind } : {}) } })
       nextTick(() => selectNote(id))
@@ -373,6 +373,12 @@ function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeo
     }
   }
   if (!props.toolLock) emit('tool', 'select')
+}
+
+/** The browser took the pointer away: an eraser stroke is dropped, not carried out. */
+function onPointerCancel(e: PointerEvent) {
+  if (drag?.kind === 'erase') { erased.value = []; drag = null; return }
+  onPointerUp(e)
 }
 
 function onPointerUp(e: PointerEvent) {
@@ -395,7 +401,7 @@ function onPointerUp(e: PointerEvent) {
     send(...ids.map(id => ({ type: 'deleteNote', id }) as CanvasOp)) // one stroke, one undo step
     return
   }
-  if (d?.kind === 'shiftpress') { selection.toggle(d.key); justDragged = true; setTimeout(() => (justDragged = false), 0); return } // the click that follows must not reselect
+  if (d?.kind === 'shiftpress') { selection.toggleGroup(d.key); justDragged = true; setTimeout(() => (justDragged = false), 0); return } // the click that follows must not reselect
   if (d?.kind === 'marquee') {
     const box = marquee.value
     marquee.value = null
@@ -408,7 +414,7 @@ function onPointerUp(e: PointerEvent) {
     return
   }
   if (!d) return
-  if (d.kind === 'create' && creating.value) { const c = creating.value; creating.value = null; justDragged = true; setTimeout(() => (justDragged = false), 0); finishCreate(d, c); return }
+  if (d.kind === 'create' && creating.value) { const c = creating.value; creating.value = null; justDragged = true; setTimeout(() => (justDragged = false), 0); finishCreate(d, c, e.altKey); return }
   if (d.kind === 'pen') {
     creating.value = null
     justDragged = true; setTimeout(() => (justDragged = false), 0)
@@ -438,7 +444,7 @@ function onViewportClick(e: MouseEvent) {
 // Notes: text editing, board rename
 /** Double-click: text notes and shapes edit their text. Inside a group it first selects just that member. */
 function startNoteEdit(n: NoteView) {
-  if (!canvasLevel.value) return
+  if (!canvasLevel.value || n.locked) return
   if (n.group && selection.count.value > 1) { selection.only(noteKey(n.id)); return }
   if (['sticky', 'text', 'rect', 'oval'].includes(n.kind)) { selectNote(n.id); editingNote.value = n.id }
 }
@@ -513,7 +519,7 @@ const selectionLocked = computed(() => selection.count.value > 0 && selection.se
 const selectionGrouped = computed(() => selection.selected.value.some(i => i.group))
 
 // ---- copy, paste, duplicate, z-order ---------------------------------------------------------------
-const board_ = useCanvasClipboard({ canvas: () => cv.value, selection, send, newId: uid, pointer: () => (lastClient ? toWorld(lastClient.x, lastClient.y) : null) })
+const board_ = useCanvasClipboard({ canvas: () => cv.value, selection, send, newId: uid, pointer: () => (lastClient ? toWorld(lastClient.x, lastClient.y) : null), geometry: id => notes.value.find(n => n.id === id) })
 /** Align or distribute the selection (from the side panel). */
 const align = (mode: AlignMode) => sendMove(patchOps(alignPatches(selection.selected.value, mode)))
 const distribute = (axis: 'x' | 'y') => sendMove(patchOps(distributePatches(selection.selected.value, axis)))
@@ -543,7 +549,7 @@ function handleKey(input: string | KeyInfo) {
     if (k.shift && k.code === 'Digit1') { fit(true); return }
     if (k.shift && k.code === 'Digit2') { zoomToSelection(); return }
     if (key.toLowerCase() === 'q' && creationTool.value) { emit('toolLock', !props.toolLock); return } // lock the drawing tool
-    if (key === 'Escape') { emit('tool', 'select'); emit('toolLock', false); selection.clear(); editingNote.value = null; marquee.value = null; erased.value = []; return }
+    if (key === 'Escape') { emit('tool', 'select'); emit('toolLock', false); selection.clear(); editingNote.value = null; marquee.value = null; erased.value = []; if (drag?.kind === 'erase') drag = null; return }
     if (canvasFocused.value) {
       if ((key === 'Delete' || key === 'Backspace') && selection.count.value) { deleteSelection(); return }
       if (key.startsWith('Arrow') && selection.count.value) { nudge(key); return }
@@ -803,7 +809,7 @@ watch(isCanvas, () => nextTick(() => fit()))
     @pointermove="onPointerMove"
     @pointerleave="lastClient = null"
     @pointerup="onPointerUp"
-    @pointercancel="onPointerUp"
+    @pointercancel="onPointerCancel"
     @click="onViewportClick"
     @contextmenu="onContextMenu"
   >
@@ -849,6 +855,7 @@ watch(isCanvas, () => nextTick(() => fit()))
       <!-- selection frame and resize handles (canvas level) -->
       <template v-if="selBox && !editingNote">
         <div class="selbox" :style="{ left: selBox.x + 'px', top: selBox.y + 'px', width: selBox.w + 'px', height: selBox.h + 'px', borderWidth: 2 / k + 'px' }" />
+        <Lock v-if="selectionLocked" class="lock-badge" aria-label="Locked" :style="{ left: selBox.x + selBox.w + 'px', top: selBox.y + 'px', transform: `translate(-100%, -120%) scale(${1 / k})` }" />
         <template v-if="endpointNote">
           <span data-handle class="hd" :style="endpoint(endpointNote, 'start')" @pointerdown.stop="gestures.startEndpoint($event, endpointNote, 'start')" />
           <span data-handle class="hd" :style="endpoint(endpointNote, 'end')" @pointerdown.stop="gestures.startEndpoint($event, endpointNote, 'end')" />
@@ -931,6 +938,7 @@ watch(isCanvas, () => nextTick(() => fit()))
 .canvas.tool .board-shield { cursor: crosshair; }
 .bind-hl { position: absolute; border: solid var(--brand); border-radius: 4px; pointer-events: none; box-sizing: border-box; z-index: 4; }
 .canvas.eraser, .canvas.eraser .board-shield { cursor: cell; }
+.lock-badge { position: absolute; width: 14px; height: 14px; padding: 2px; border-radius: 4px; background: #fff; color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; transform-origin: 100% 100%; pointer-events: none; z-index: 5; }
 .guide { position: absolute; background: var(--brand); pointer-events: none; z-index: 4; }
 .marquee { position: absolute; border: solid #3b82f6; background: rgba(59, 130, 246, .08); pointer-events: none; box-sizing: border-box; }
 .selbox { position: absolute; border: solid #3b82f6; pointer-events: none; box-sizing: border-box; }

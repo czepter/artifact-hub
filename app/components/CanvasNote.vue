@@ -13,7 +13,7 @@ const sw = computed(() => widthOf(props.n))
 const col = computed(() => strokeOf(props.n))
 const dash = computed(() => dashOf(props.n.strokeStyle, sw.value))
 const vis = computed(() => (props.hidden ? 'hidden' : 'visible'))
-const cls = computed(() => ({ sel: props.selected, editable: props.editable, editing: props.editing, erasing: props.erasing }))
+const cls = computed(() => ({ locked: props.n.locked, sel: props.selected, editable: props.editable, editing: props.editing, erasing: props.erasing }))
 /** Arrowheads at the two ends: where, and which way they point. */
 const heads = computed(() => (['start', 'end'] as const).map(end => ({
   type: headOf(props.n, end), x: end === 'start' ? a.value.x1 : a.value.x2, y: end === 'start' ? a.value.y1 : a.value.y2,
@@ -69,7 +69,7 @@ const done = (e: Event) => emit('commit', ((e.target as HTMLElement).innerText ?
     :viewBox="`0 0 ${a.bw} ${a.bh}`" overflow="visible" @pointerdown="emit('down', $event)"
   >
     <line :x1="a.x1" :y1="a.y1" :x2="a.x2" :y2="a.y2" :stroke="col" :stroke-width="sw" :stroke-dasharray="dash" stroke-linecap="round" />
-    <template v-for="h in heads" :key="h.x + ',' + h.y">
+    <template v-for="h in heads" :key="h.rot + ',' + h.x + ',' + h.y">
       <g :transform="`translate(${h.x} ${h.y}) rotate(${h.rot})`">
         <polygon v-if="h.type === 'arrow'" :points="`0,0 -${10 + sw * 1.6},-${4 + sw} -${10 + sw * 1.6},${4 + sw}`" :fill="col" />
         <polygon v-else-if="h.type === 'triangle'" :points="`0,0 -${10 + sw * 1.6},-${4 + sw} -${10 + sw * 1.6},${4 + sw}`" fill="none" :stroke="col" :stroke-width="sw" stroke-linejoin="round" />
@@ -103,6 +103,8 @@ const done = (e: Event) => emit('commit', ((e.target as HTMLElement).innerText ?
 .note { position: absolute; font-size: 14px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; pointer-events: none; }
 .note.editable { pointer-events: auto; cursor: move; }
 .note.erasing { opacity: .3; }
+.note.locked.editable { cursor: default; }
+.note.vec.editable.locked :deep(line), .note.vec.editable.locked :deep(path), .note.vec.editable.locked :deep(polygon), .note.vec.editable.locked :deep(circle), .note.vec.editable.locked :deep(rect), .note.vec.editable.locked :deep(ellipse) { cursor: default; }
 .note.title1 { font-size: 40px; font-weight: 650; color: var(--fg); line-height: 1.15; }
 .note.sticky { border: 1px solid; border-radius: 3px; padding: 10px 12px; color: #3b2f14; box-shadow: 0 2px 6px rgb(0 0 0 / .08); font-size: 13px; min-height: 60px; }
 .note.text { color: var(--fg); }

@@ -25,7 +25,7 @@ defineEmits<{
         <ContextMenuItem v-if="canGroup" @select="$emit('group')"><Group />Group<ContextMenuShortcut>Ctrl G</ContextMenuShortcut></ContextMenuItem>
         <ContextMenuItem v-if="grouped" @select="$emit('ungroup')"><Ungroup />Ungroup<ContextMenuShortcut>Ctrl Shift G</ContextMenuShortcut></ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem variant="destructive" @select="$emit('deleteBoard')"><Trash2 />Delete board<ContextMenuShortcut>⌫</ContextMenuShortcut></ContextMenuItem>
+        <ContextMenuItem variant="destructive" :disabled="locked" @select="$emit('deleteBoard')"><Trash2 />Delete board<ContextMenuShortcut>⌫</ContextMenuShortcut></ContextMenuItem>
       </template>
     </template>
     <template v-else-if="type === 'note'">
@@ -43,7 +43,7 @@ defineEmits<{
         <ContextMenuItem v-if="grouped" @select="$emit('ungroup')"><Ungroup />Ungroup<ContextMenuShortcut>Ctrl Shift G</ContextMenuShortcut></ContextMenuItem>
         <ContextMenuSeparator />
       </template>
-      <ContextMenuItem :disabled="!canvasLevel" variant="destructive" @select="$emit('deleteNote')"><Trash2 />Delete</ContextMenuItem>
+      <ContextMenuItem :disabled="!canvasLevel || locked" variant="destructive" @select="$emit('deleteNote')"><Trash2 />Delete</ContextMenuItem>
     </template>
     <template v-else>
       <template v-if="canvasLevel">

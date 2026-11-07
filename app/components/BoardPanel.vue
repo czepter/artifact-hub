@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { CanvasOp } from '#shared/canvasOps'
-import { boardKey, deleteOps, itemsFromCanvas, noteKey } from '#shared/canvasItemOps'
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceBetween, Play, Plus, Trash2, Pencil } from '@lucide/vue'
+import { boardKey, deleteOps, itemsFromCanvas, lockOps, noteKey } from '#shared/canvasItemOps'
+import { Lock, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceBetween, Play, Plus, Trash2, Pencil } from '@lucide/vue'
 import { ButtonGroup } from '@/components/ui/button-group'
 import type { AlignMode } from '#shared/canvasGeometry'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ const note = computed(() => (one.value?.type === 'note' ? props.canvas?.notes?.[
 const many = computed(() => props.sel.length > 1)
 const manyLabel = computed(() => { const b = props.sel.filter(s => s.type === 'board').length, n = props.sel.length - b; return [b && `${b} board${b === 1 ? '' : 's'}`, n && `${n} note${n === 1 ? '' : 's'}`].filter(Boolean).join(' and ') })
 const emitOp = (op: CanvasOp) => emit('ops', [op])
+const unlock = () => { if (one.value) emit('ops', lockOps([{ key: one.value.type === 'board' ? boardKey(one.value.id) : noteKey(one.value.id) }], false)) }
 /** Selected notes (for the style panel). */
 const selNotes = computed(() => props.sel.filter(s => s.type === 'note' && props.canvas?.notes?.[s.id]).map(s => ({ id: s.id, kind: props.canvas.notes[s.id].kind ?? 'sticky', note: props.canvas.notes[s.id] })))
 const ALIGN: { mode: AlignMode, label: string, icon: any }[] = [
@@ -55,6 +56,8 @@ function addBoard() {
 <template>
   <div class="grid grid-cols-[minmax(0,1fr)] gap-4 text-[13px]">
     <template v-if="board && one">
+      <div v-if="board.locked" class="lockbar" role="status"><Lock class="size-3.5" aria-hidden="true" /><span>Locked</span><Button size="xs" variant="outline" @click="unlock">Unlock</Button></div>
+      <fieldset :disabled="!!board.locked" class="fs">
       <section class="grid gap-2">
         <h3 class="sec">Board</h3>
         <div class="grid gap-1.5"><Label>Name</Label><Input class="h-8" :model-value="board.title" @change="patchBoard({ title: ($event.target as HTMLInputElement).value })" /></div>
@@ -88,9 +91,12 @@ function addBoard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </fieldset>
     </template>
 
     <template v-else-if="note && one">
+      <div v-if="note.locked" class="lockbar" role="status"><Lock class="size-3.5" aria-hidden="true" /><span>Locked</span><Button size="xs" variant="outline" @click="unlock">Unlock</Button></div>
+      <fieldset :disabled="!!note.locked" class="fs">
       <section class="grid gap-2">
         <h3 class="sec">{{ ({ sticky: 'Sticky note', text: 'Text', rect: 'Rectangle', oval: 'Oval', line: 'Line', arrow: 'Arrow', pen: 'Drawing', title1: 'Title' } as Record<string, string>)[kind] ?? 'Note' }}</h3>
         <div v-if="kind === 'sticky' || kind === 'text' || kind === 'title1'" class="grid gap-1.5"><Label>Text</Label><Textarea rows="3" :model-value="note.text" @change="patchNote({ text: ($event.target as HTMLTextAreaElement).value })" /></div>
@@ -119,7 +125,8 @@ function addBoard() {
         <div><Button size="xs" variant="outline" class="text-destructive" @click="emitOp({ type: 'deleteNote', id: one.id })"><Trash2 />Delete</Button></div>
       </section>
       <ShapeStylePanel :notes="selNotes" @ops="emit('ops', $event)" />
-      <section v-if="kind !== 'pen'" class="grid gap-2">
+      <p v-if="kind === 'arrow' && note.bind" class="hint">Attached to {{ [note.bind.start && 'its start', note.bind.end && 'its end'].filter(Boolean).join(' and ') }}: it follows what it is attached to. Drag an end away to detach it.</p>
+      <section v-else-if="kind !== 'pen'" class="grid gap-2">
         <h3 class="sec">Frame</h3>
         <div class="grid grid-cols-2 gap-2">
           <div class="grid gap-1.5"><Label>X</Label><Input class="h-8" type="number" :model-value="note.x" @change="patchNote({ x: num($event) })" /></div>
@@ -128,6 +135,7 @@ function addBoard() {
           <div v-if="kind !== 'text'" class="grid gap-1.5"><Label>{{ kind === 'line' || kind === 'arrow' ? 'ΔY' : 'Height' }}</Label><Input class="h-8" type="number" :model-value="note.h" @change="patchNote({ h: num($event) })" /></div>
         </div>
       </section>
+      </fieldset>
     </template>
 
     <template v-else-if="many">
@@ -177,6 +185,9 @@ function addBoard() {
 
 <style scoped>
 .sec { margin: 0 0 2px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 600; }
+.fs { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.lockbar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground); }
+.lockbar span { flex: 1; }
 .sub { margin: 0; font-size: 12px; font-weight: 500; }
 .hint { margin: 0; color: var(--muted-foreground); font-size: 12px; }
 </style>

@@ -84,7 +84,7 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
       if (g.bindable) { // an arrow end dropped on a board or note attaches to it; dropped on empty canvas it is free
         const o = g.orig, pt = g.which === 'end' ? { x: o.x + o.w + wx, y: o.y + o.h + wy } : { x: o.x + wx, y: o.y + wy }
         const self = g.id
-        const hit = bindTargetAt(pt, arrows.targets().filter(t => !(t.type === 'note' && t.id === self)), 8 / k.value)
+        const hit = e.altKey ? null : bindTargetAt(pt, arrows.targets().filter(t => !(t.type === 'note' && t.id === self)), 8 / k.value)
         bindHint.value = hit; bindChange = { which: g.which, target: hit }
       }
     }

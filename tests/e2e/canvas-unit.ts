@@ -107,6 +107,19 @@ ok('duplicateBoard copyTo names the copy; existing path 409; bad path 400', (() 
   const pr = pasteOps({ notes: [], boards: [{ path: 'screens/Home.html', entry: { x: 0, y: 0, w: 10, h: 10 } }] }, { dx: 5, dy: 5 }, () => 'nt' + 'abc12' + ++n)
   ok('pasteOps names board copies and reports their paths for selection', pr.boardPaths.length === 1 && pr.boardPaths[0] === 'screens/Home-abc121.html' && (pr.ops[0] as any).copyTo === pr.boardPaths[0], pr)
 }
+{
+  // arrows copied with their targets stay attached to the copies; groups of two or more stay groups
+  const cv: any = { boards: { 'a.html': { x: 0, y: 0, w: 100, h: 100, group: 'g1' } }, notes: { r: { kind: 'rect', x: 200, y: 0, w: 50, h: 50, group: 'g1' }, ar: { kind: 'arrow', x: 100, y: 25, w: 100, h: 0, bind: { start: { type: 'board', id: 'a.html' }, end: { type: 'note', id: 'r' } } }, lone: { kind: 'arrow', x: 0, y: 0, w: 5, h: 5, bind: { end: { type: 'note', id: 'r' } } } } }
+  let n = 0
+  const all = pasteOps(copyPayload(cv, [{ type: 'board', id: 'a.html' }, { type: 'note', id: 'r' }, { type: 'note', id: 'ar' }]), { dx: 10, dy: 10 }, () => 'q' + ++n)
+  const arrow = all.ops.find(o => o.type === 'addNote' && (o as any).note.kind === 'arrow') as any
+  ok('pasting an arrow with its targets rebinds it to the copies and keeps the group', arrow.note.bind.start.id === all.boardPaths[0] && arrow.note.bind.end.id === all.noteIds.find(i => i !== arrow.id) && all.ops.some(o => o.type === 'updateBoard' && (o as any).patch.group === (all.ops.find(x => x.type === 'addNote' && (x as any).note.kind === 'rect') as any).note.group), all.ops)
+  ok('...and the copies apply on the server (bind targets exist by then)', (() => { const r = applyCanvasOps(cv, ['a.html'], all.ops); return Object.keys(r.canvas.notes).length === 5 })())
+  const alone = pasteOps(copyPayload(cv, [{ type: 'note', id: 'lone' }]), { dx: 0, dy: 0 }, () => 'z')
+  ok('an arrow copied without its targets comes loose', !(alone.ops[0] as any).note.bind)
+  throws('only arrows can be bound', () => applyCanvasOps(cv, ['a.html'], [{ type: 'addNote', id: 'x', note: { kind: 'rect', w: 5, h: 5, bind: { end: { type: 'note', id: 'r' } } } }]), 400)
+  throws('arrows cannot bind to lines or drawings', () => applyCanvasOps(cv, ['a.html'], [{ type: 'addNote', id: 'x', note: { kind: 'arrow', bind: { end: { type: 'note', id: 'lone' } } } }]), 400)
+}
 // limits stay
 throws('more than 200 operations rejected', () => applyCanvasOps(null, [], Array.from({ length: 201 }, (_, i) => ({ type: 'addNote' as const, id: 'n' + i, note: {} }))), 413)
 throws('more than 1000 notes rejected', () => { let c: any = null; for (let i = 0; i < 6; i++) c = applyCanvasOps(c, [], Array.from({ length: 200 }, (_, j) => ({ type: 'addNote' as const, id: `n${i}_${j}`, note: {} }))).canvas }, 413)
@@ -251,7 +264,7 @@ ok('noteGeometry: defaults (sticky 240 wide, others 360)', noteGeometry({}).w ==
   ok('clipBox covers everything copied', (() => { const b = clipBox(copyPayload(cv, [{ type: 'note', id: 'r' }, { type: 'board', id: 'b.html' }]))!; return b.x === 5 && b.y === 0 && b.w === 595 })())
   let n = 0
   const pr = pasteOps(copyPayload(cv, refs), { dx: 20, dy: 30 }, () => 'p' + ++n)
-  ok('pasteOps: new ids, moved, legacy kinds skipped, group/lock/bind dropped, boards duplicated at the new place', pr.noteIds.join() === 'p1,p2' && same(pr.ops[1], { type: 'addNote', id: 'p2', note: { kind: 'rect', x: 25, y: 35, w: 50, h: 40 } }) && same(pr.ops[2], { type: 'duplicateBoard', path: 'a.html', x: 20, y: 30, copyTo: 'a-p3.html' }), pr.ops)
+  ok('pasteOps: boards first, new ids, moved, legacy kinds skipped, group/lock/bind dropped from non-arrows', pr.noteIds.length === 2 && pr.ops[0]!.type === 'duplicateBoard' && (pr.ops[0] as any).copyTo === pr.boardPaths[0] && same(pr.ops[2], { type: 'addNote', id: pr.noteIds[1], note: { kind: 'rect', x: 25, y: 35, w: 50, h: 40 } }) && same((pr.ops[0] as any).x, 20), pr.ops)
   const applied = applyCanvasOps(cv, ['a.html', 'b.html'], pr.ops)
   ok('pasted ops apply cleanly and leave the originals alone', Object.keys(applied.canvas.notes).length === 5 && applied.copyFiles[0]!.from === 'a.html' && applied.canvas.notes.r.x === 5, applied.copyFiles)
   ok('patchOps builds updates from patches', same(patchOps({ 'n:a': { x: 1 }, 'b:p.html': { y: 2 } }), [{ type: 'updateNote', id: 'a', patch: { x: 1 } }, { type: 'updateBoard', path: 'p.html', patch: { y: 2 } }]))

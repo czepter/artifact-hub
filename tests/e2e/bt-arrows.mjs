@@ -148,5 +148,73 @@ ok('releasing deletes everything it touched in one version', !c.notes.rb && !c.n
 ok('boards are never erased', Object.keys(c.boards).length === boards0)
 await pg.keyboard.press('Escape'); await pg.keyboard.press('Control+z'); await t.settle(2500)
 ok('one undo restores the erased notes', (await t.canvas()).notes.rb && (await t.canvas()).notes.ov)
+
+// 12. review follow-ups: panel shows what is drawn, copies of bound arrows, groups, locks, eraser cancel, Alt = no binding
+await pg.mouse.click(empty.x, empty.y); await t.settle(1500)
+await pg.locator(`svg.note.vec[data-id="${aid}"] line`).first().click({ force: true }); await pg.waitForTimeout(250)
+ok('the panel shows the drawn width for a note that stores none (Medium) and the drawn head (Arrow at the end)', await pg.locator('[aria-label="Medium"][data-state="on"]').count() === 1 && (await pg.locator('[aria-label="End arrowhead"]').innerText()).includes('Arrow'))
+ok('a bound arrow has no stale frame fields', await pg.locator('text=/Attached to/').count() === 1 && await pg.locator('text=ΔX').count() === 0)
+// copy a bound arrow after its target moved: the copy appears where the arrow is drawn
+const ra5 = await sbox('ra')
+await pg.mouse.click(empty.x, empty.y)
+await drag(pg, center(ra5), { x: center(ra5).x - 50, y: center(ra5).y + 60 }); await t.settle(1500)
+const orig = await abox(aid), kk = (await pg.locator('[data-board][data-path="screens/Login.html"]').boundingBox()).width / 560
+await pg.locator(`svg.note.vec[data-id="${aid}"] line`).first().click({ force: true }); await pg.waitForTimeout(250)
+const vC = await t.version()
+await pg.keyboard.press('Control+d'); await t.settle()
+c = await t.canvas()
+const copyId = Object.entries(c.notes).find(([k2, n]) => n.kind === 'arrow' && k2 !== aid)?.[0]
+const cb = copyId && await abox(copyId)
+ok('Ctrl+D on a bound arrow copies it where it is drawn (+24), unbound, in one version', copyId && !c.notes[copyId].bind && await t.version() === vC + 1 && Math.abs((cb.x - orig.x) - 24 * kk) < 2.5 && Math.abs((cb.y - orig.y) - 24 * kk) < 2.5, [orig, cb])
+await pg.mouse.click(empty.x, empty.y); await pg.keyboard.press('Control+z'); await t.settle(2500)
+
+// shift-click on a group member selects the whole group
+await pg.mouse.click(empty.x, empty.y)
+await pg.mouse.click(center(await sbox('rb')).x, center(await sbox('rb')).y)
+await pg.keyboard.down('Shift'); await pg.mouse.click(center(await sbox('ov')).x, center(await sbox('ov')).y + 20); await pg.keyboard.up('Shift')
+const vG = await t.version()
+await pg.keyboard.press('Control+g'); await t.settle()
+ok('Ctrl+G is one version', await t.version() === vG + 1)
+await pg.keyboard.press('Control+z'); await t.settle(2500)
+ok('...and one undo ungroups', !(await t.canvas()).notes.rb.group)
+await pg.keyboard.press('Control+g'); await t.settle()
+await pg.mouse.click(empty.x, empty.y)
+await pg.keyboard.down('Shift'); await pg.mouse.click(center(await sbox('rb')).x, center(await sbox('rb')).y); await pg.keyboard.up('Shift')
+ok('shift-click on a group member adds the whole group', await pg.locator('text=/2 items/').first().isVisible())
+await pg.keyboard.press('Control+Shift+g'); await t.settle()
+
+// locks: one version, shown in the panel, the panel cannot bypass it, marquee and eraser skip locked notes
+await pg.mouse.click(empty.x, empty.y)
+await pg.mouse.click(center(await sbox('ra')).x, center(await sbox('ra')).y)
+const vLk = await t.version()
+await pg.keyboard.press('Control+Shift+l'); await t.settle()
+ok('Ctrl+Shift+L locks in one version', (await t.canvas()).notes.ra.locked === true && await t.version() === vLk + 1)
+ok('the panel says Locked with an Unlock button, and Delete there is disabled', await pg.locator('.lockbar', { hasText: 'Locked' }).count() === 1 && await pg.locator('fieldset:disabled button:has-text("Delete")').count() === 1)
+ok('a lock badge marks the selection', await pg.locator('[aria-label="Locked"]').count() >= 1)
+await pg.mouse.click(empty.x, empty.y)
+const ra6 = await sbox('ra')
+await drag(pg, { x: ra6.x - 25, y: ra6.y - 25 }, { x: ra6.x + ra6.width + 25, y: ra6.y + ra6.height + 25 })
+ok('a marquee does not select a locked note (the arrow attached to it may be selected, the note is not)', await pg.locator('[aria-label="Locked"]').count() === 0 && await pg.locator('.lockbar').count() === 0)
+await pg.keyboard.press('e')
+await drag(pg, { x: center(ra6).x - 40, y: center(ra6).y }, { x: center(ra6).x + 40, y: center(ra6).y }); await t.settle(1800)
+ok('the eraser does not touch a locked note', !!(await t.canvas()).notes.ra)
+await pg.keyboard.press('Escape')
+await pg.mouse.click(center(await sbox('ra')).x, center(await sbox('ra')).y); await pg.keyboard.press('Control+Shift+l'); await t.settle()
+ok('Ctrl+Shift+L again unlocks', !(await t.canvas()).notes.ra.locked)
+
+// Escape cancels an eraser stroke in progress
+await pg.mouse.click(empty.x, empty.y); await pg.keyboard.press('e')
+const ea = center(await sbox('rb')), eb = center(await sbox('ov'))
+await pg.mouse.move(ea.x - 30, ea.y); await pg.mouse.down(); await pg.mouse.move(ea.x, ea.y, { steps: 3 })
+await pg.keyboard.press('Escape'); await pg.mouse.move(eb.x, eb.y, { steps: 8 }); await pg.mouse.up(); await t.settle(1800)
+ok('Escape during an eraser stroke cancels it: nothing is deleted', (await t.canvas()).notes.rb && (await t.canvas()).notes.ov)
+
+// Alt while drawing an arrow: no binding
+await pg.mouse.click(empty.x, empty.y); await pg.keyboard.press('l')
+await pg.keyboard.down('Alt'); await drag(pg, center(await sbox('rb')), center(await sbox('ov')), { steps: 6 }); await pg.keyboard.up('Alt'); await t.settle()
+c = await t.canvas()
+const free = Object.entries(c.notes).filter(([k2, n]) => n.kind === 'arrow' && k2 !== aid)
+ok('holding Alt while drawing an arrow does not attach it', free.length === 1 && !free[0][1].bind, free)
+
 const clean = t.logs.filter(l => !/favicon|404/.test(l)); ok('no page errors', clean.length === 0, clean)
 await t.browser.close(); process.exit(results.fails ? 1 : 0)

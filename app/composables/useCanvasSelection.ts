@@ -24,11 +24,16 @@ export function useCanvasSelection(items: Ref<GeomItem[]>) {
   function set(list: string[]) { keys.value = new Set(list) }
   function clear() { if (keys.value.size) keys.value = new Set() }
   function toggle(key: string) { const s = new Set(keys.value); if (!s.delete(key)) s.add(key); keys.value = s }
+  /** Shift-click: add or remove the item, or its whole group. */
+  function toggleGroup(key: string) {
+    const g = groupKeys([...byKey.value.values()], key), on = g.every(k => keys.value.has(k))
+    keys.value = new Set(on ? [...keys.value].filter(k => !g.includes(k)) : [...keys.value, ...g])
+  }
   function add(key: string) { if (!keys.value.has(key)) keys.value = new Set([...keys.value, key]) }
   function selectAll() { keys.value = new Set(items.value.map(i => i.key)) }
   const only = (key: string | null) => set(key ? [key] : [])
   /** Select the item, or the whole group when it is in one. */
   const setGroup = (key: string) => set(groupKeys([...byKey.value.values()], key))
 
-  return { keys, byKey, selected, count, single, bbox, refs, has, set, clear, toggle, add, selectAll, only, setGroup }
+  return { keys, byKey, selected, count, single, bbox, refs, has, set, clear, toggle, toggleGroup, add, selectAll, only, setGroup }
 }

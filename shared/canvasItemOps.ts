@@ -63,13 +63,13 @@ export function itemsFromCanvas(canvas: { boards?: Record<string, any>, notes?: 
 }
 
 // ---- copy and paste ---------------------------------------------------------------------------------
-export interface ClipPayload { notes: { note: Record<string, unknown> }[], boards: { path: string, entry: Record<string, any> }[] }
+export interface ClipPayload { notes: { id: string, note: Record<string, any> }[], boards: { path: string, entry: Record<string, any> }[] }
 
 /** What the selection looks like on the clipboard: copies of the stored notes and board entries. */
 export function copyPayload(canvas: { boards?: Record<string, any>, notes?: Record<string, any> } | null | undefined, refs: SelRef[]): ClipPayload {
   const clip: ClipPayload = { notes: [], boards: [] }
   for (const r of refs) {
-    if (r.type === 'note' && canvas?.notes?.[r.id]) clip.notes.push({ note: JSON.parse(JSON.stringify(canvas.notes[r.id])) })
+    if (r.type === 'note' && canvas?.notes?.[r.id]) clip.notes.push({ id: r.id, note: JSON.parse(JSON.stringify(canvas.notes[r.id])) })
     else if (r.type === 'board' && canvas?.boards?.[r.id]) clip.boards.push({ path: r.id, entry: JSON.parse(JSON.stringify(canvas.boards[r.id])) })
   }
   return clip
@@ -90,21 +90,42 @@ export function clipBox(clip: ClipPayload): Box | null {
 export function pasteOps(clip: ClipPayload, d: { dx: number, dy: number }, newId: () => string): { ops: CanvasOp[], noteIds: string[], boardPaths: string[] } {
   const ops: CanvasOp[] = [], noteIds: string[] = [], boardPaths: string[] = []
   const r1 = (n: number) => Math.round(n * 10) / 10
-  for (const { note } of clip.notes) {
-    if (!NOTE_KINDS.includes((note.kind ?? 'sticky') as never)) continue
-    const copy: Record<string, unknown> = { ...note }
-    delete copy.group; delete copy.locked; delete copy.bind
-    copy.x = r1((+(note.x as number) || 0) + d.dx); copy.y = r1((+(note.y as number) || 0) + d.dy)
-    const id = newId()
-    noteIds.push(id)
-    ops.push({ type: 'addNote', id, note: copy } as CanvasOp)
-  }
+  const noteMap = new Map<string, string>(), boardMap = new Map<string, string>()
+  // Groups that are copied with two or more members stay groups (under a new id).
+  const members = new Map<string, number>()
+  for (const g of [...clip.notes.map(n => n.note.group), ...clip.boards.map(b => b.entry.group)]) if (typeof g === 'string') members.set(g, (members.get(g) ?? 0) + 1)
+  const groupMap = new Map<string, string>([...members].filter(([, n]) => n > 1).map(([g]) => [g, 'g' + newId().replace(/^nt/, '')]))
+  // Boards first, so arrows copied with them can attach to the copies.
   for (const b of clip.boards) {
     // The copy gets a path chosen here, so the caller knows what to select afterwards.
     const dot = b.path.lastIndexOf('.'), copyTo = `${b.path.slice(0, dot).replace(/-[a-z0-9]{6}$/, '')}-${newId().replace(/^nt/, '')}${b.path.slice(dot)}`
     const ok = copyTo.split('/').every(seg => seg.length <= 80)
-    if (ok) boardPaths.push(copyTo)
+    if (ok) { boardPaths.push(copyTo); boardMap.set(b.path, copyTo) }
     ops.push({ type: 'duplicateBoard', path: b.path, x: r1((+b.entry.x || 0) + d.dx), y: r1((+b.entry.y || 0) + d.dy), ...(ok ? { copyTo } : {}) })
+    const g = groupMap.get(b.entry.group)
+    if (ok && g) ops.push({ type: 'updateBoard', path: copyTo, patch: { group: g } })
+  }
+  const pasteable = clip.notes.filter(n => NOTE_KINDS.includes((n.note.kind ?? 'sticky') as never))
+  for (const n of pasteable) noteMap.set(n.id, newId())
+  // Shapes before arrows: an arrow can only be bound to something that exists.
+  const isArrow = (n: { note: Record<string, any> }) => n.note.kind === 'arrow'
+  for (const { id: oldId, note } of [...pasteable.filter(n => !isArrow(n)), ...pasteable.filter(isArrow)]) {
+    const copy: Record<string, unknown> = { ...note }
+    delete copy.locked; delete copy.group; delete copy.bind
+    const g = groupMap.get(note.group as string)
+    if (g) copy.group = g
+    // An arrow keeps its attachments to things that were copied along with it; the rest come loose.
+    const bind: Record<string, unknown> = {}
+    for (const end of ['start', 'end'] as const) {
+      const t = note.kind === 'arrow' ? (note.bind as any)?.[end] : undefined
+      const to = t ? (t.type === 'board' ? boardMap.get(t.id) : noteMap.get(t.id)) : undefined
+      if (t && to) bind[end] = { type: t.type, id: to }
+    }
+    if (Object.keys(bind).length) copy.bind = bind
+    copy.x = r1((+(note.x as number) || 0) + d.dx); copy.y = r1((+(note.y as number) || 0) + d.dy)
+    const id = noteMap.get(oldId)!
+    noteIds.push(id)
+    ops.push({ type: 'addNote', id, note: copy } as CanvasOp)
   }
   return { ops, noteIds, boardPaths }
 }

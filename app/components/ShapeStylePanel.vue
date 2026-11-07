@@ -21,7 +21,12 @@ const FILLS = ['none', 'gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue
 const WIDTHS = [{ v: 1.5, label: 'Thin' }, { v: 2.5, label: 'Medium' }, { v: 4, label: 'Bold' }]
 const HEADS = [{ v: 'none', label: 'None' }, { v: 'arrow', label: 'Arrow' }, { v: 'triangle', label: 'Triangle' }, { v: 'dot', label: 'Dot' }, { v: 'bar', label: 'Bar' }]
 const stroke = computed(() => val('stroke', val('color', '#1c1b19')))
-const defaultHead = (end: 'arrowStart' | 'arrowEnd') => (end === 'arrowEnd' && first.value?.kind === 'arrow' ? 'arrow' : 'none')
+// What is drawn when a field is not stored (older canvases): width 2 for shapes and 2.5 for lines; arrows end in a head.
+const widthNow = computed(() => { const f = first.value; const w = f?.note.strokeWidth ?? (f?.kind === 'rect' || f?.kind === 'oval' ? 2 : 2.5); return WIDTHS.reduce((a, b) => (Math.abs(b.v - w) < Math.abs(a.v - w) ? b : a)).v })
+const headNote = computed(() => props.notes.find(n => n.kind === 'arrow' || n.kind === 'line') ?? null)
+const headNow = (end: 'arrowStart' | 'arrowEnd') => (headNote.value?.note[end] as string | undefined) ?? (end === 'arrowEnd' && headNote.value?.kind === 'arrow' ? 'arrow' : 'none')
+/** A hex colour is applied when valid; otherwise the field goes back to what is drawn. */
+function onHex(e: Event) { const el = e.target as HTMLInputElement; if (/^#[0-9a-f]{6}$/i.test(el.value)) apply({ stroke: el.value }); else el.value = stroke.value }
 </script>
 
 <template>
@@ -31,12 +36,12 @@ const defaultHead = (end: 'arrowStart' | 'arrowEnd') => (end === 'arrowEnd' && f
       <Label>Stroke colour</Label>
       <div class="flex gap-1.5">
         <Input type="color" class="size-8 shrink-0 cursor-pointer p-0.5" aria-label="Stroke colour" :model-value="stroke" @change="apply({ stroke: ($event.target as HTMLInputElement).value })" />
-        <Input class="h-8" aria-label="Stroke colour (hex)" :model-value="stroke" @change="(e: Event) => /^#[0-9a-f]{6}$/i.test((e.target as HTMLInputElement).value) && apply({ stroke: (e.target as HTMLInputElement).value })" />
+        <Input class="h-8" aria-label="Stroke colour (hex)" :model-value="stroke" @change="onHex" />
       </div>
     </div>
     <div v-if="has('strokeWidth')" class="grid gap-1.5">
       <Label>Stroke width</Label>
-      <ToggleGroup type="single" variant="outline" size="sm" class="justify-start" aria-label="Stroke width" :model-value="String(WIDTHS.find(w => w.v === val('strokeWidth', 0))?.v ?? '')" @update:model-value="(v) => v && apply({ strokeWidth: Number(v) })">
+      <ToggleGroup type="single" variant="outline" size="sm" class="justify-start" aria-label="Stroke width" :model-value="String(widthNow)" @update:model-value="(v) => v && apply({ strokeWidth: Number(v) })">
         <ToggleGroupItem v-for="w in WIDTHS" :key="w.v" :value="String(w.v)" :aria-label="w.label">{{ w.label }}</ToggleGroupItem>
       </ToggleGroup>
     </div>
@@ -64,7 +69,7 @@ const defaultHead = (end: 'arrowStart' | 'arrowEnd') => (end === 'arrowEnd' && f
     <div v-if="has('arrowStart')" class="grid grid-cols-2 gap-2">
       <div v-for="end in (['arrowStart', 'arrowEnd'] as const)" :key="end" class="grid gap-1.5">
         <Label>{{ end === 'arrowStart' ? 'Start' : 'End' }} arrowhead</Label>
-        <Select :model-value="val(end, defaultHead(end))" @update:model-value="(v) => apply({ [end]: String(v) })">
+        <Select :model-value="headNow(end)" @update:model-value="(v) => apply({ [end]: String(v) })">
           <SelectTrigger size="sm" class="w-full" :aria-label="`${end === 'arrowStart' ? 'Start' : 'End'} arrowhead`"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem v-for="h in HEADS" :key="h.v" :value="h.v">{{ h.label }}</SelectItem></SelectContent>
         </Select>

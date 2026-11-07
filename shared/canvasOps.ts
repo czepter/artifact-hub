@@ -153,9 +153,11 @@ export function reorder(list: string[], ids: string[], mode: ReorderMode): strin
 function checkBind(canvas: Canvas, selfId: string | null, note: Record<string, unknown>) {
   const b = note.bind as Bind | undefined
   if (!b) return
+  if ((note.kind ?? 'sticky') !== 'arrow') throw new CanvasError(400, 'Only arrows can be bound')
   for (const end of ['start', 'end'] as const) {
     const t = b[end]
     if (!t) continue
+    if (t.type === 'note' && !['rect', 'oval', 'sticky', 'text'].includes(String((canvas.notes[t.id] as any)?.kind ?? 'sticky'))) throw new CanvasError(400, 'Arrows attach to boards, rectangles, ovals, sticky notes and text')
     const exists = Object.hasOwn(t.type === 'board' ? canvas.boards : canvas.notes, t.id)
     if (!exists || (t.type === 'note' && t.id === selfId)) throw new CanvasError(400, `Cannot bind to ${t.type} ${t.id}`)
   }
