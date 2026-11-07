@@ -12,6 +12,8 @@ export interface GeomItem {
   /** Pen strokes: points relative to x/y. */
   points?: number[][]
   locked?: boolean
+  /** Items sharing a group id are selected together. */
+  group?: string
 }
 
 /** What a transform wants to change on one item. Only the keys present are written. */
@@ -294,4 +296,63 @@ export function constrainCreate(kind: 'box' | 'line', s: { x: number, y: number 
   }
   if (o.alt) return { x: s.x - dx, y: s.y - dy, w: dx * 2, h: dy * 2 }
   return { x: s.x, y: s.y, w: dx, h: dy }
+}
+
+// ---- arrow binding ----------------------------------------------------------------------------------
+export type BindShape = 'rect' | 'oval'
+export interface BindTargetBox { type: 'board' | 'note', id: string, box: Box, shape: BindShape }
+const centreOf = (b: Box) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 })
+
+/**
+ * Where an arrow end bound to `box` is drawn: on the edge of the box (a rectangle or an ellipse) along the line from
+ * the box centre towards `from` (the other end of the arrow), then `gap` px further out.
+ */
+export function boundEndpoint(from: { x: number, y: number }, box: Box, shape: BindShape, gap = 6): { x: number, y: number } {
+  const c = centreOf(box), dx = from.x - c.x, dy = from.y - c.y, len = Math.hypot(dx, dy)
+  if (len < 1e-6) return { x: c.x, y: box.y - gap }
+  const hw = Math.max(box.w / 2, 1e-6), hh = Math.max(box.h / 2, 1e-6)
+  const t = shape === 'oval' ? 1 / Math.hypot(dx / hw, dy / hh) : Math.min(dx ? hw / Math.abs(dx) : Infinity, dy ? hh / Math.abs(dy) : Infinity)
+  return { x: round1(c.x + dx * t + (dx / len) * gap), y: round1(c.y + dy * t + (dy / len) * gap) }
+}
+
+/**
+ * The geometry an arrow is drawn with: each bound end sits on its target, the unbound end stays where it is stored.
+ * Moving a target therefore needs no operation: the next render resolves the arrow again.
+ */
+export function resolveArrow(n: { x: number, y: number, w: number, h: number }, bind: { start?: { type: string, id: string } | null, end?: { type: string, id: string } | null } | undefined, find: (t: { type: string, id: string }) => BindTargetBox | null, gap = 6) {
+  if (!bind) return { x: n.x, y: n.y, w: n.w, h: n.h }
+  const s0 = { x: n.x, y: n.y }, e0 = { x: n.x + n.w, y: n.y + n.h }
+  const st = bind.start ? find(bind.start) : null, et = bind.end ? find(bind.end) : null
+  if (!st && !et) return { x: n.x, y: n.y, w: n.w, h: n.h }
+  const s = st ? boundEndpoint(et ? centreOf(et.box) : e0, st.box, st.shape, gap) : s0
+  const e = et ? boundEndpoint(st ? centreOf(st.box) : s0, et.box, et.shape, gap) : e0
+  return { x: s.x, y: s.y, w: round1(e.x - s.x), h: round1(e.y - s.y) }
+}
+
+/** The topmost target whose box (grown by `tol`) contains the point; `targets` are listed back to front. */
+export function bindTargetAt(p: { x: number, y: number }, targets: BindTargetBox[], tol: number): BindTargetBox | null {
+  for (let i = targets.length - 1; i >= 0; i--) {
+    const b = targets[i]!.box
+    if (p.x >= b.x - tol && p.x <= b.x + b.w + tol && p.y >= b.y - tol && p.y <= b.y + b.h + tol) return targets[i]!
+  }
+  return null
+}
+
+// ---- hit testing (eraser) ---------------------------------------------------------------------------------
+const distToSegment = (p: { x: number, y: number }, a: { x: number, y: number }, b: { x: number, y: number }) => {
+  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy
+  const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+
+/** Is the point on this note, within `tol`? Lines and pen strokes are hit near the stroke, other notes anywhere inside. */
+export function noteHit(n: { kind: string, x: number, y: number, w: number, h: number, points?: number[][] }, p: { x: number, y: number }, tol: number): boolean {
+  if (isDirected(n.kind)) return distToSegment(p, { x: n.x, y: n.y }, { x: n.x + n.w, y: n.y + n.h }) <= tol
+  if (n.kind === 'pen') {
+    const pts = (n.points ?? []).map(q => ({ x: n.x + q[0]!, y: n.y + q[1]! }))
+    if (pts.length === 1) return Math.hypot(p.x - pts[0]!.x, p.y - pts[0]!.y) <= tol
+    return pts.some((a, i) => i > 0 && distToSegment(p, pts[i - 1]!, a) <= tol)
+  }
+  const b = noteBox(n)
+  return p.x >= b.x - tol && p.x <= b.x + b.w + tol && p.y >= b.y - tol && p.y <= b.y + b.h + tol
 }

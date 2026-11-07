@@ -1,6 +1,6 @@
 import { applyCanvasOps, CanvasError, emptyCanvas, mergeOps, orderedNoteIds, reorder, type CanvasOp } from '../../shared/canvasOps'
-import { clipBox, copyPayload, deleteOps, itemsFromCanvas, nudgeOps, overrideOps, pasteOps, patchOps, refOfKey } from '../../shared/canvasItemOps'
-import { alignPatches, boxesIntersect, constrainCreate, distributePatches, guidesFor, noteGeometry, normBox, snapBox, snapLines, arrowPath, fitView, itemBox, noteBox, penPath, scaleItems, moveEndpoint, toWorldPoint, unionBox, zoomView, type GeomItem } from '../../shared/canvasGeometry'
+import { detachBinds, groupKeys, groupOps, lockOps, styleOps, ungroupOps, clipBox, copyPayload, deleteOps, itemsFromCanvas, nudgeOps, overrideOps, pasteOps, patchOps, refOfKey } from '../../shared/canvasItemOps'
+import { bindTargetAt, boundEndpoint, noteHit, resolveArrow, alignPatches, boxesIntersect, constrainCreate, distributePatches, guidesFor, noteGeometry, normBox, snapBox, snapLines, arrowPath, fitView, itemBox, noteBox, penPath, scaleItems, moveEndpoint, toWorldPoint, unionBox, zoomView, type GeomItem } from '../../shared/canvasGeometry'
 import { applyEdits, getElementSource, EditError, ensureIds } from '../../server/utils/htmlEdit'
 let fails = 0
 const ok = (n: string, c: any, x: any = '') => { console.log(c ? 'PASS' : 'FAIL', n, c ? '' : JSON.stringify(x).slice(0, 300)); if (!c) fails++ }
@@ -255,6 +255,47 @@ ok('noteGeometry: defaults (sticky 240 wide, others 360)', noteGeometry({}).w ==
   const applied = applyCanvasOps(cv, ['a.html', 'b.html'], pr.ops)
   ok('pasted ops apply cleanly and leave the originals alone', Object.keys(applied.canvas.notes).length === 5 && applied.copyFiles[0]!.from === 'a.html' && applied.canvas.notes.r.x === 5, applied.copyFiles)
   ok('patchOps builds updates from patches', same(patchOps({ 'n:a': { x: 1 }, 'b:p.html': { y: 2 } }), [{ type: 'updateNote', id: 'a', patch: { x: 1 } }, { type: 'updateBoard', path: 'p.html', patch: { y: 2 } }]))
+}
+
+// ---- Phase 2
+{
+  const box = { x: 100, y: 100, w: 200, h: 100 }
+  ok('boundEndpoint (rect): from the right, on the right edge plus the gap', same(boundEndpoint({ x: 500, y: 150 }, box, 'rect', 6), { x: 306, y: 150 }))
+  ok('boundEndpoint (rect): from above, on the top edge minus the gap', same(boundEndpoint({ x: 200, y: 0 }, box, 'rect', 6), { x: 200, y: 94 }))
+  ok('boundEndpoint (rect): diagonal leaves through the nearer side', (() => { const p = boundEndpoint({ x: 500, y: 450 }, box, 'rect', 0); return Math.abs(p.y - 200) < 0.2 && p.x > 200 && p.x < 300 })())
+  ok('boundEndpoint (oval): from the right it is on the ellipse', same(boundEndpoint({ x: 500, y: 150 }, box, 'oval', 0), { x: 300, y: 150 }) && (() => { const p = boundEndpoint({ x: 500, y: 450 }, box, 'oval', 0); return Math.abs(((p.x - 200) / 100) ** 2 + ((p.y - 150) / 50) ** 2 - 1) < 0.01 })())
+  ok('boundEndpoint: from inside still lands on the edge; from the centre is safe', boundEndpoint({ x: 250, y: 150 }, box, 'rect', 0).x === 300 && Number.isFinite(boundEndpoint({ x: 200, y: 150 }, box, 'rect').y))
+  const find = (t: any) => (t.id === 'a' ? { type: 'note' as const, id: 'a', box, shape: 'rect' as const } : t.id === 'b' ? { type: 'board' as const, id: 'b', box: { x: 600, y: 100, w: 100, h: 100 }, shape: 'rect' as const } : null)
+  ok('resolveArrow: unbound arrow is untouched', same(resolveArrow({ x: 1, y: 2, w: 3, h: 4 }, undefined, find), { x: 1, y: 2, w: 3, h: 4 }))
+  const both = resolveArrow({ x: 0, y: 0, w: 5, h: 5 }, { start: { type: 'note', id: 'a' }, end: { type: 'board', id: 'b' } }, find, 0)
+  ok('resolveArrow: both ends bound run centre to centre between the edges', same(both, { x: 300, y: 150, w: 300, h: 0 }), both)
+  const one = resolveArrow({ x: 500, y: 150, w: 50, h: 0 }, { start: { type: 'note', id: 'a' } }, find, 0)
+  ok('resolveArrow: one end bound, the other stays where it is', one.x === 300 && one.y === 150 && one.x + one.w === 550 && one.y + one.h === 150, one)
+  ok('resolveArrow: a missing target is ignored', same(resolveArrow({ x: 1, y: 2, w: 3, h: 4 }, { end: { type: 'note', id: 'gone' } }, find), { x: 1, y: 2, w: 3, h: 4 }))
+  const moved = resolveArrow({ x: 0, y: 0, w: 5, h: 5 }, { start: { type: 'note', id: 'a' }, end: { type: 'board', id: 'b' } }, (t: any) => (t.id === 'a' ? { type: 'note', id: 'a', box: { ...box, y: 400 }, shape: 'rect' } : find(t)), 0)
+  ok('resolveArrow follows a moved target without any stored change', moved.y !== both.y && moved.h !== 0, moved)
+  const tg = [{ type: 'board' as const, id: 'b', box: { x: 0, y: 0, w: 100, h: 100 }, shape: 'rect' as const }, { type: 'note' as const, id: 'a', box: { x: 50, y: 50, w: 100, h: 100 }, shape: 'rect' as const }]
+  ok('bindTargetAt: topmost wins, tolerance grows the box, empty is null', bindTargetAt({ x: 60, y: 60 }, tg, 0)!.id === 'a' && bindTargetAt({ x: 10, y: 10 }, tg, 0)!.id === 'b' && bindTargetAt({ x: 155, y: 60 }, tg, 8)!.id === 'a' && bindTargetAt({ x: 155, y: 60 }, tg, 0) === null)
+}
+ok('noteHit: boxes anywhere inside, lines near the stroke, pen near the path', noteHit({ kind: 'rect', x: 0, y: 0, w: 100, h: 50 }, { x: 50, y: 25 }, 0) && !noteHit({ kind: 'rect', x: 0, y: 0, w: 100, h: 50 }, { x: 120, y: 25 }, 5) && noteHit({ kind: 'arrow', x: 0, y: 0, w: 100, h: 0 }, { x: 50, y: 4 }, 5) && !noteHit({ kind: 'arrow', x: 0, y: 0, w: 100, h: 0 }, { x: 50, y: 20 }, 5) && noteHit({ kind: 'line', x: 100, y: 100, w: -50, h: -50 }, { x: 75, y: 76 }, 3) && noteHit({ kind: 'pen', x: 10, y: 10, w: 0, h: 0, points: [[0, 0], [50, 0], [50, 50]] }, { x: 60, y: 40 }, 4) && !noteHit({ kind: 'pen', x: 10, y: 10, w: 0, h: 0, points: [[0, 0], [50, 0], [50, 50]] }, { x: 30, y: 40 }, 4))
+{
+  const items = [{ key: 'n:a', group: 'g1' }, { key: 'n:b', group: 'g1' }, { key: 'b:p.html' }, { key: 'n:c', group: 'g2' }]
+  ok('groupKeys: the whole group, or just the item', same(groupKeys(items, 'n:a'), ['n:a', 'n:b']) && same(groupKeys(items, 'b:p.html'), ['b:p.html']) && same(groupKeys(items, 'n:zz'), ['n:zz']))
+  ok('groupOps needs two items; ungroupOps clears only grouped ones; lockOps sets or clears', groupOps([{ key: 'n:a' }], 'g').length === 0 && same(groupOps([{ key: 'n:a' }, { key: 'b:p.html' }], 'g9'), [{ type: 'updateNote', id: 'a', patch: { group: 'g9' } }, { type: 'updateBoard', path: 'p.html', patch: { group: 'g9' } }]) && same(ungroupOps(items), [{ type: 'updateNote', id: 'a', patch: { group: null } }, { type: 'updateNote', id: 'b', patch: { group: null } }, { type: 'updateNote', id: 'c', patch: { group: null } }]) && same(lockOps([{ key: 'n:a' }], true), [{ type: 'updateNote', id: 'a', patch: { locked: true } }]) && same(lockOps([{ key: 'b:p.html' }], false), [{ type: 'updateBoard', path: 'p.html', patch: { locked: null } }]))
+  const cv0 = applyCanvasOps(null, [], [{ type: 'addBoard', path: 'a.html', x: 0, y: 0, w: 100, h: 100 }, { type: 'addNote', id: 'a', note: { kind: 'rect', w: 10, h: 10 } }]).canvas
+  const cv1 = applyCanvasOps(cv0, ['a.html'], [...groupOps([{ key: 'n:a' }, { key: 'b:a.html' }], 'g1'), ...lockOps([{ key: 'n:a' }], true)]).canvas
+  ok('group and lock ops apply to notes and boards', cv1.notes.a.group === 'g1' && cv1.boards['a.html'].group === 'g1' && cv1.notes.a.locked === true)
+  const cv2 = applyCanvasOps(cv1, ['a.html'], [...ungroupOps([{ key: 'n:a', group: 'g1' }]), ...lockOps([{ key: 'n:a' }], false)]).canvas
+  ok('ungroup and unlock clear the fields', !('group' in cv2.notes.a) && !('locked' in cv2.notes.a))
+}
+ok('styleOps only writes fields that apply to each kind', same(styleOps([{ id: 'r', kind: 'rect' }, { id: 'o', kind: 'oval' }, { id: 'a', kind: 'arrow' }, { id: 'p', kind: 'pen' }, { id: 's', kind: 'sticky' }], { stroke: '#ff0000', roundness: 'round', arrowEnd: 'dot', fill: 'blue' }), [{ type: 'updateNote', id: 'r', patch: { stroke: '#ff0000', fill: 'blue', roundness: 'round' } }, { type: 'updateNote', id: 'o', patch: { stroke: '#ff0000', fill: 'blue' } }, { type: 'updateNote', id: 'a', patch: { stroke: '#ff0000', arrowEnd: 'dot' } }, { type: 'updateNote', id: 'p', patch: { stroke: '#ff0000' } }]))
+ok('styleOps results pass the server validation', (() => { const base = applyCanvasOps(null, [], [{ type: 'addNote', id: 'r', note: { kind: 'rect', w: 10, h: 10 } }, { type: 'addNote', id: 'a', note: { kind: 'arrow', w: 10, h: 0 } }]).canvas; const r = applyCanvasOps(base, [], styleOps([{ id: 'r', kind: 'rect' }, { id: 'a', kind: 'arrow' }], { stroke: '#112233', strokeWidth: 4, strokeStyle: 'dotted', roundness: 'sharp', arrowStart: 'bar', arrowEnd: 'triangle', fill: 'red' })).canvas; return r.notes.r.strokeStyle === 'dotted' && r.notes.a.arrowEnd === 'triangle' && r.notes.r.fill === 'red' })())
+{
+  const notes = { ar: { kind: 'arrow', bind: { start: { type: 'note', id: 'a' }, end: { type: 'board', id: 'p.html' } } }, ar2: { kind: 'arrow', bind: { end: { type: 'note', id: 'a' } } }, free: { kind: 'arrow' } }
+  const ops = (id: string) => [{ type: 'updateNote' as const, id, patch: { x: 5 } }]
+  ok('detachBinds: an arrow moved alone loses its bindings', same(detachBinds(ops('ar'), notes, new Set(['n:ar']))[0], { type: 'updateNote', id: 'ar', patch: { x: 5, bind: null } }))
+  ok('detachBinds: ends whose target moves along are kept', same(detachBinds(ops('ar'), notes, new Set(['n:ar', 'n:a']))[0], { type: 'updateNote', id: 'ar', patch: { x: 5, bind: { start: { type: 'note', id: 'a' } } } }))
+  ok('detachBinds: everything bound moving = no change; unbound arrows and other ops untouched', same(detachBinds(ops('ar'), notes, new Set(['n:ar', 'n:a', 'b:p.html']))[0], ops('ar')[0]) && same(detachBinds(ops('free'), notes, new Set())[0], ops('free')[0]) && same(detachBinds([{ type: 'deleteNote', id: 'ar' }], notes, new Set())[0], { type: 'deleteNote', id: 'ar' }))
 }
 
 // --- htmlEdit additions

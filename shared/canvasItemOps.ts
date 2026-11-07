@@ -108,3 +108,62 @@ export function pasteOps(clip: ClipPayload, d: { dx: number, dy: number }, newId
   }
   return { ops, noteIds, boardPaths }
 }
+
+// ---- group, lock, style, bindings ---------------------------------------------------------------------------
+type Patchable = { key: string }
+const updateFor = (key: string, patch: Record<string, unknown>): CanvasOp => {
+  const r = refOfKey(key)
+  return (r.type === 'board' ? { type: 'updateBoard', path: r.id, patch } : { type: 'updateNote', id: r.id, patch }) as CanvasOp
+}
+
+/** All items that share a group with `key` (or just `key`). Clicking a grouped item selects the whole group. */
+export function groupKeys(items: (Patchable & { group?: string })[], key: string): string[] {
+  const g = items.find(i => i.key === key)?.group
+  return g ? items.filter(i => i.group === g).map(i => i.key) : [key]
+}
+/** Put the items in one new group (two or more). Items that were in other groups join it. */
+export function groupOps(items: Patchable[], groupId: string): CanvasOp[] {
+  return items.length < 2 ? [] : items.map(i => updateFor(i.key, { group: groupId }))
+}
+export function ungroupOps(items: (Patchable & { group?: string })[]): CanvasOp[] {
+  return items.filter(i => i.group).map(i => updateFor(i.key, { group: null }))
+}
+export function lockOps(items: Patchable[], locked: boolean): CanvasOp[] {
+  return items.map(i => updateFor(i.key, { locked: locked ? true : null }))
+}
+
+export interface StyleChange { stroke?: string, strokeWidth?: number, strokeStyle?: string, fill?: string, roundness?: string, arrowStart?: string, arrowEnd?: string }
+/** Which style fields apply to which kind of note. */
+export const STYLE_FIELDS: Record<string, (keyof StyleChange)[]> = {
+  rect: ['stroke', 'strokeWidth', 'strokeStyle', 'fill', 'roundness'], oval: ['stroke', 'strokeWidth', 'strokeStyle', 'fill'],
+  line: ['stroke', 'strokeWidth', 'strokeStyle', 'arrowStart', 'arrowEnd'], arrow: ['stroke', 'strokeWidth', 'strokeStyle', 'arrowStart', 'arrowEnd'], pen: ['stroke', 'strokeWidth', 'strokeStyle'],
+}
+/** One update per selected note for the style fields that apply to its kind; all of it is one batch. */
+export function styleOps(notes: { id: string, kind: string }[], change: StyleChange): CanvasOp[] {
+  const ops: CanvasOp[] = []
+  for (const n of notes) {
+    const patch: Record<string, unknown> = {}
+    for (const f of STYLE_FIELDS[n.kind] ?? []) if (change[f] !== undefined) patch[f] = change[f]
+    if (Object.keys(patch).length) ops.push({ type: 'updateNote', id: n.id, patch } as CanvasOp)
+  }
+  return ops
+}
+
+/**
+ * An arrow that is moved or resized on its own comes loose from the things it was bound to: the update operations get
+ * a `bind` patch without the ends whose target is not moving along (`moving`: selection keys).
+ */
+export function detachBinds(ops: CanvasOp[], notes: Record<string, any> | undefined, moving: Set<string>): CanvasOp[] {
+  return ops.map((op) => {
+    if (op.type !== 'updateNote' || (op.patch as any).bind !== undefined) return op
+    const bind = notes?.[op.id]?.bind
+    if (!bind) return op
+    const keep: Record<string, unknown> = {}
+    for (const end of ['start', 'end'] as const) {
+      const t = bind[end]
+      if (t && moving.has(t.type === 'board' ? boardKey(t.id) : noteKey(t.id))) keep[end] = t
+    }
+    if (Object.keys(keep).length === Number(!!bind.start) + Number(!!bind.end)) return op
+    return { ...op, patch: { ...op.patch, bind: Object.keys(keep).length ? keep : null } } as CanvasOp
+  })
+}
