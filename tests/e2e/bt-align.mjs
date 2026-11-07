@@ -43,6 +43,13 @@ await pg.mouse.click(center(login).x, center(login).y, { button: 'right' }); awa
 ok('right-click on a member keeps the multi-selection', await pg.locator('text=/\\d+ items/').first().isVisible())
 await pg.keyboard.press('Escape'); await pg.waitForTimeout(400) // the menu closes
 
+// context-menu Delete acts on the whole selection it shows
+await pg.mouse.click(stage.x + 15, stage.y + 300); await pg.keyboard.press('Control+a')
+await pg.mouse.click(center(login).x, center(login).y, { button: 'right' }); await pg.waitForTimeout(200)
+const vDel = await t.version()
+await pg.locator('[role=menuitem]:has-text("Delete board")').click(); await t.settle()
+{ const c = await t.canvas(); ok('context-menu Delete removes every selected item in one version', Object.keys(c.boards).length === 0 && Object.keys(c.notes).length === 0 && await t.version() === vDel + 1, [Object.keys(c.boards), Object.keys(c.notes)]) }
+await pg.mouse.click(stage.x + 15, stage.y + 300); await pg.keyboard.press('Control+z'); await t.settle(3000)
 // board-only duplicate keeps the copy selected, and can be repeated
 await pg.keyboard.press('Escape'); await pg.mouse.click(center(login).x, center(login).y); await pg.waitForTimeout(200); await pg.keyboard.press('Control+d'); await t.settle()
 ok('after duplicating a board the copy is selected', await pg.locator('.board.selected').count() === 1 && Object.keys((await t.canvas()).boards).length === 4, [await pg.locator('.board.selected').count(), Object.keys((await t.canvas()).boards).length, await pg.locator('[data-board]').count()])

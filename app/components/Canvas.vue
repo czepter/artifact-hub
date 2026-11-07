@@ -188,7 +188,7 @@ function navKeys(enabled: boolean) {
 }
 
 // ---- selection ---------------------------------------------------------------------------------
-watch(notes, () => nextTick(measureNotes), { flush: 'post' })
+watch(() => notes.value.map(n => n.id).join(), () => nextTick(measureNotes), { flush: 'post' }) // only when the set of notes changes, not on every drag frame
 watch(() => (canvasLevel.value ? selection.refs.value : []), v => emit('canvasSelect', v), { deep: true })
 function selectBoard(path: string | null) { selection.only(path ? boardKey(path) : null) }
 function selectNote(id: string | null) { selection.only(id ? noteKey(id) : null) }
@@ -426,10 +426,6 @@ function onContextMenu(e: MouseEvent) {
   else if (boardEl?.dataset.path) { ctx.value = { type: 'board', id: boardEl.dataset.path, x: w.x, y: w.y }; if (!selection.has(boardKey(boardEl.dataset.path))) selectBoard(boardEl.dataset.path) } // a right-click inside the selection keeps it
   else ctx.value = { type: 'canvas', id: '', x: w.x, y: w.y }
 }
-function ctxDeleteBoard() {
-  const b = ctxBoard.value
-  if (b && confirmBoardDelete([b])) { send({ type: 'removeBoard', path: b.path }); selection.clear() }
-}
 function ctxAddBoard() { send({ type: 'addBoard', title: 'Board', x: round(ctx.value.x), y: round(ctx.value.y), w: 1280, h: 800 }) }
 function ctxAddSticky() { send({ type: 'addNote', id: uid(), note: { kind: 'sticky', x: round(ctx.value.x), y: round(ctx.value.y), w: 240, text: '' } as any }) }
 
@@ -518,7 +514,9 @@ const canvasFocused = ref(false)
 function onWindowPointer(e: PointerEvent) {
   const t = e.target as HTMLElement
   // The toolbar, zoom pill and header buttons keep their own arrow-key behaviour.
-  canvasFocused.value = !!viewport.value?.contains(t) && !t.closest('[data-toolbar], .zoom, .focusbar, [data-ui], button, input, textarea')
+  canvasFocused.value = !!viewport.value?.contains(t) && !t.closest('[data-toolbar], .zoom, .focusbar, [data-ui], button, input, textarea, [contenteditable="true"]')
+  // Pressing the canvas takes the keyboard from a toolbar button that still has focus (Space would otherwise press it).
+  if (canvasFocused.value) (document.activeElement as HTMLElement | null)?.blur?.()
 }
 
 const onBlur = () => { spaceHeld.value = false }
@@ -535,7 +533,7 @@ function onKey(e: KeyboardEvent) {
     return
   }
   // Hold Space for a temporary hand (only once the canvas has been clicked, so Space on a focused button still presses it).
-  if (e.key === ' ' && canvasLevel.value && canvasFocused.value) { e.preventDefault(); spaceHeld.value = true; return }
+  if (e.key === ' ' && canvasLevel.value && canvasFocused.value && !(e.target as HTMLElement)?.closest?.('button, a, [role="button"], [role="menuitem"]')) { e.preventDefault(); spaceHeld.value = true; return }
   if (focusBoard.value && [' ', 'PageDown', 'PageUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault()
   if (canvasLevel.value && canvasFocused.value && e.key.startsWith('Arrow') && selection.count.value) e.preventDefault()
   handleKey({ key: e.key, code: e.code, shift: e.shiftKey })
@@ -910,7 +908,7 @@ watch(isCanvas, () => nextTick(() => fit()))
   <CanvasContextMenu
     :type="ctx.type" :id="ctx.id" :canvas-level="canvasLevel" :has-clip="board_.hasClip.value"
     @play="ctxBoard && emit('play', ctxBoard.path)" @focus="ctxBoard && enterFocus(ctxBoard.path)" @tweaks="ctxBoard && emit('openTweaks', ctxBoard.path)" @export="ctxBoard && emit('exportBoard', ctxBoard.path)"
-    @duplicate="board_.duplicate" @rename="ctxBoard && startRename(ctxBoard)" @delete-board="ctxDeleteBoard" @copy="board_.copy" @delete-note="send({ type: 'deleteNote', id: ctx.id })"
+    @duplicate="board_.duplicate" @rename="ctxBoard && startRename(ctxBoard)" @delete-board="deleteSelection" @copy="board_.copy" @delete-note="deleteSelection"
     @reorder="board_.reorder" @add-board="ctxAddBoard" @add-sticky="ctxAddSticky" @paste="board_.pasteAt(ctx)" @fit="fit(true)" @zoom="zoomAt" @present="emit('present')"
   />
   </ContextMenu>
