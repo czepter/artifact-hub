@@ -489,7 +489,10 @@ function onTarget(t: { board: string, anchor: Anchor }) {
 }
 
 async function post(path: string, body?: unknown) {
-  return $fetch(`/api/view/${props.refId}/${path}`, { method: 'POST', body })
+  const r = await $fetch(`/api/view/${props.refId}/${path}`, { method: 'POST', body })
+  // The signed-in lists and the nav badge cache comment counts: mark them stale (they revalidate on their next visit).
+  if (path.startsWith('comments')) void invalidate('comments', 'comment-count', 'dashboard', 'artifacts')
+  return r
 }
 
 async function submitDraft(body: string) {
@@ -617,11 +620,13 @@ async function commitRename() {
   renaming.value = false
   if (!t || t === data.value!.artifact.title) return
   await $fetch(`/api/artifacts/${data.value!.artifact.id}`, { method: 'PATCH', body: { title: t } })
+  void invalidate('artifacts', 'dashboard', 'comments')
   await load()
 }
 async function togglePin() {
   menuOpen.value = false
   await $fetch(`/api/artifacts/${data.value!.artifact.id}`, { method: 'PATCH', body: { pinned: !data.value!.artifact.pinned } })
+  void invalidate('artifacts', 'dashboard')
   await load()
 }
 async function duplicate() {
@@ -640,7 +645,7 @@ function askRemove() { menuOpen.value = false; deleteOpen.value = true }
 async function remove() {
   menuOpen.value = false
   await $fetch(`/api/artifacts/${data.value!.artifact.id}`, { method: 'DELETE' })
-  await navigateTo('/', { external: true })
+  await navigateTo('/', { external: true }) // a full load: every cached list starts clean
 }
 
 // ---- sharing (owner) ---------------------------------------------------------------------------
