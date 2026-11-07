@@ -183,3 +183,115 @@ export function penPath(n: { kind: string, x: number, y: number, w: number, h: n
   const b = noteBox(n), ox = n.x - b.x, oy = n.y - b.y
   return n.points.map((p, i) => `${i ? 'L' : 'M'}${p[0]! + ox},${p[1]! + oy}`).join(' ')
 }
+
+// ---- note geometry from stored data ---------------------------------------------------------------
+/** Position, size and points of a stored note, with the defaults the viewer draws it with. */
+export function noteGeometry(v: Record<string, any>) {
+  const kind: string = v.kind ?? 'sticky'
+  return { kind, x: +v.x || 0, y: +v.y || 0, w: v.w !== undefined ? +v.w : (kind === 'sticky' ? 240 : 360), h: +v.h || 0, points: (Array.isArray(v.points) ? v.points : []) as number[][] }
+}
+
+// ---- boxes ----------------------------------------------------------------------------------------
+export const normBox = (a: { x: number, y: number }, b: { x: number, y: number }): Box => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) })
+export const boxesIntersect = (a: Box, b: Box) => a.x <= b.x + b.w && b.x <= a.x + a.w && a.y <= b.y + b.h && b.y <= a.y + a.h
+
+// ---- snapping -------------------------------------------------------------------------------------
+export interface Guide { axis: 'x' | 'y', pos: number, from: number, to: number }
+const lines = (b: Box, axis: 'x' | 'y') => (axis === 'x' ? [b.x, b.x + b.w / 2, b.x + b.w] : [b.y, b.y + b.h / 2, b.y + b.h])
+
+/** The smallest move that puts one of `mine` on one of `targets`, within `thr`; 0 when nothing is close. */
+export function snapLines(mine: number[], targets: number[], thr: number): number {
+  let best = 0, bd = thr + 1e-9
+  for (const m of mine) for (const t of targets) { const d = t - m; if (Math.abs(d) < Math.abs(bd) || (Math.abs(d) === Math.abs(bd) && best === 0)) { if (Math.abs(d) <= thr) { best = d; bd = d } } }
+  return best
+}
+
+/**
+ * Snaps a moving box to the edges and centres of other boxes. `threshold` is in world px (use px / zoom).
+ * Returns the correction to add to the box position, and the guide lines to draw once corrected.
+ */
+export function snapBox(moving: Box, others: Box[], threshold: number): { dx: number, dy: number, guides: Guide[] } {
+  const dx = snapLines(lines(moving, 'x'), others.flatMap(o => lines(o, 'x')), threshold)
+  const dy = snapLines(lines(moving, 'y'), others.flatMap(o => lines(o, 'y')), threshold)
+  const m: Box = { ...moving, x: moving.x + dx, y: moving.y + dy }
+  return { dx, dy, guides: guidesFor(m, others) }
+}
+
+/** Guide lines where the box now lines up with another box (edge or centre). */
+export function guidesFor(m: Box, others: Box[]): Guide[] {
+  const out: Guide[] = []
+  const eps = 0.01
+  for (const axis of ['x', 'y'] as const) {
+    const cross = axis === 'x' ? 'y' : 'x', size = axis === 'x' ? 'h' : 'w'
+    for (const mv of lines(m, axis)) {
+      for (const o of others) {
+        if (!lines(o, axis).some(l => Math.abs(l - mv) < eps)) continue
+        const from = Math.min(m[cross], o[cross]), to = Math.max(m[cross] + m[size], o[cross] + o[size])
+        if (!out.some(g => g.axis === axis && Math.abs(g.pos - mv) < eps)) out.push({ axis, pos: mv, from, to })
+        else { const g = out.find(g => g.axis === axis && Math.abs(g.pos - mv) < eps)!; g.from = Math.min(g.from, from); g.to = Math.max(g.to, to) }
+      }
+    }
+  }
+  return out
+}
+
+// ---- align and distribute ---------------------------------------------------------------------------
+export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom'
+
+/** Moves unlocked items so their boxes share an edge or centre. Locked items stay, and do not set the target. */
+export function alignPatches(items: GeomItem[], mode: AlignMode): Record<string, GeomPatch> {
+  const live = items.filter(i => !i.locked)
+  if (live.length < 2) return {}
+  const boxes = live.map(itemBox)
+  const horizontal = mode === 'left' || mode === 'hcenter' || mode === 'right'
+  const lo = Math.min(...boxes.map(b => (horizontal ? b.x : b.y))), hi = Math.max(...boxes.map(b => (horizontal ? b.x + b.w : b.y + b.h)))
+  const out: Record<string, GeomPatch> = {}
+  live.forEach((it, i) => {
+    const b = boxes[i]!
+    const size = horizontal ? b.w : b.h, start = horizontal ? b.x : b.y
+    const target = mode === 'left' || mode === 'top' ? lo : mode === 'right' || mode === 'bottom' ? hi - size : (lo + hi) / 2 - size / 2
+    const d = target - start
+    if (Math.abs(d) < 0.05) return
+    out[it.key] = horizontal ? { x: round1(it.x + d) } : { y: round1(it.y + d) }
+  })
+  return out
+}
+
+/** Spreads three or more unlocked items so the gaps between their boxes are equal; the outer two stay. */
+export function distributePatches(items: GeomItem[], axis: 'x' | 'y'): Record<string, GeomPatch> {
+  const live = items.filter(i => !i.locked).map(i => ({ it: i, b: itemBox(i) }))
+  if (live.length < 3) return {}
+  const pos = (b: Box) => (axis === 'x' ? b.x : b.y), size = (b: Box) => (axis === 'x' ? b.w : b.h)
+  live.sort((a, b) => pos(a.b) - pos(b.b))
+  const first = live[0]!, last = live[live.length - 1]!
+  const span = pos(last.b) + size(last.b) - pos(first.b)
+  const gap = (span - live.reduce((s, l) => s + size(l.b), 0)) / (live.length - 1)
+  const out: Record<string, GeomPatch> = {}
+  let cursor = pos(first.b) + size(first.b) + gap
+  for (const l of live.slice(1, -1)) {
+    const d = cursor - pos(l.b)
+    if (Math.abs(d) >= 0.05) out[l.it.key] = axis === 'x' ? { x: round1(l.it.x + d) } : { y: round1(l.it.y + d) }
+    cursor += size(l.b) + gap
+  }
+  return out
+}
+
+// ---- constrained drawing ----------------------------------------------------------------------------
+/**
+ * The shape being drawn from `s` to pointer `c`. Boxes (rect, oval, board): Shift makes a square, Alt draws from the centre.
+ * Lines and arrows: Shift snaps the angle to 15 degrees, Alt makes `s` the middle. Lines keep signed extents.
+ */
+export function constrainCreate(kind: 'box' | 'line', s: { x: number, y: number }, c: { x: number, y: number }, o: { shift?: boolean, alt?: boolean } = {}): Box {
+  let dx = c.x - s.x, dy = c.y - s.y
+  if (kind === 'box') {
+    if (o.shift) { const m = Math.max(Math.abs(dx), Math.abs(dy)); dx = (dx < 0 ? -m : m); dy = (dy < 0 ? -m : m) }
+    if (o.alt) return { x: s.x - Math.abs(dx), y: s.y - Math.abs(dy), w: Math.abs(dx) * 2, h: Math.abs(dy) * 2 }
+    return { x: Math.min(s.x, s.x + dx), y: Math.min(s.y, s.y + dy), w: Math.abs(dx), h: Math.abs(dy) }
+  }
+  if (o.shift) {
+    const step = Math.PI / 12, a = Math.round(Math.atan2(dy, dx) / step) * step, len = Math.hypot(dx, dy)
+    dx = Math.round(len * Math.cos(a) * 1e6) / 1e6; dy = Math.round(len * Math.sin(a) * 1e6) / 1e6
+  }
+  if (o.alt) return { x: s.x - dx, y: s.y - dy, w: dx * 2, h: dy * 2 }
+  return { x: s.x, y: s.y, w: dx, h: dy }
+}

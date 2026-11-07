@@ -1,6 +1,6 @@
 import { applyCanvasOps, CanvasError, emptyCanvas, mergeOps, orderedNoteIds, reorder, type CanvasOp } from '../../shared/canvasOps'
-import { deleteOps, nudgeOps, overrideOps, refOfKey } from '../../shared/canvasItemOps'
-import { arrowPath, fitView, itemBox, noteBox, penPath, scaleItems, moveEndpoint, toWorldPoint, unionBox, zoomView, type GeomItem } from '../../shared/canvasGeometry'
+import { clipBox, copyPayload, deleteOps, itemsFromCanvas, nudgeOps, overrideOps, pasteOps, patchOps, refOfKey } from '../../shared/canvasItemOps'
+import { alignPatches, boxesIntersect, constrainCreate, distributePatches, guidesFor, noteGeometry, normBox, snapBox, snapLines, arrowPath, fitView, itemBox, noteBox, penPath, scaleItems, moveEndpoint, toWorldPoint, unionBox, zoomView, type GeomItem } from '../../shared/canvasGeometry'
 import { applyEdits, getElementSource, EditError, ensureIds } from '../../server/utils/htmlEdit'
 let fails = 0
 const ok = (n: string, c: any, x: any = '') => { console.log(c ? 'PASS' : 'FAIL', n, c ? '' : JSON.stringify(x).slice(0, 300)); if (!c) fails++ }
@@ -192,6 +192,56 @@ ok('refOfKey', same(refOfKey('b:a/b.html'), { type: 'board', id: 'a/b.html' }) &
   throws('locked must be a boolean (note)', () => applyCanvasOps(null, [], [{ type: 'addNote', id: 'x', note: { locked: 'no' as any } }]), 400)
   throws('locked must be a boolean (board)', () => applyCanvasOps({ ...emptyCanvas(), boards: { 'p.html': {} }, order: ['p.html'] }, [], [{ type: 'updateBoard', path: 'p.html', patch: { locked: 'no' as any } }]), 400)
   ok('mergeOps ignores undefined fields of the later patch', same((mergeOps([{ type: 'updateNote', id: 'a', patch: { x: 1, y: 2 } }], [{ type: 'updateNote', id: 'a', patch: { x: undefined, y: 3 } }])[0] as any).patch, { x: 1, y: 3 }))
+}
+
+// ---- Phase 1: snapping, align, constrain, clipboard
+{
+  const others = [{ x: 100, y: 100, w: 200, h: 100 }]
+  let s = snapBox({ x: 304, y: 500, w: 50, h: 50 }, others, 6)
+  ok('snapBox: left edge snaps to another right edge within the threshold', s.dx === -4 && s.dy === 0, s)
+  s = snapBox({ x: 150, y: 500, w: 100, h: 50 }, others, 6)
+  ok('snapBox: centres snap (both centre at x=200)', s.dx === 0 && s.guides.some(g => g.axis === 'x' && g.pos === 200), s)
+  s = snapBox({ x: 310, y: 500, w: 50, h: 50 }, others, 6)
+  ok('snapBox: nothing within the threshold -> no move, no guides', s.dx === 0 && s.dy === 0 && s.guides.length === 0, s)
+  s = snapBox({ x: 104, y: 203, w: 50, h: 50 }, others, 6)
+  ok('snapBox: both axes at once, guides span both boxes', s.dx === -4 && s.dy === -3 && s.guides.some(g => g.axis === 'x' && g.pos === 100 && g.from === 100 && g.to === 250) && s.guides.some(g => g.axis === 'y' && g.pos === 200 && g.from === 100 && g.to === 300), s)
+  s = snapBox({ x: 304, y: 500, w: 50, h: 50 }, others, 0.5)
+  ok('snapBox: threshold scales (zoomed-in = tighter)', s.dx === 0)
+  ok('snapLines picks the closest target', snapLines([10], [14, 12, 20], 6) === 2 && snapLines([10], [30], 6) === 0)
+  ok('guidesFor: only where aligned', guidesFor({ x: 100, y: 300, w: 10, h: 10 }, others).length === 1)
+}
+{
+  const it = (key: string, x: number, y: number, w: number, h: number, locked = false): GeomItem => ({ key, kind: 'rect', x, y, w, h, locked })
+  const items = [it('n:a', 0, 0, 100, 50), it('n:b', 200, 30, 50, 50), it('n:c', 500, 100, 100, 20)]
+  ok('align left / right / hcenter', same(alignPatches(items, 'left'), { 'n:b': { x: 0 }, 'n:c': { x: 0 } }) && same(alignPatches(items, 'right'), { 'n:a': { x: 500 }, 'n:b': { x: 550 } }) && same(alignPatches(items, 'hcenter'), { 'n:a': { x: 250 }, 'n:b': { x: 275 }, 'n:c': { x: 250 } }), alignPatches(items, 'hcenter'))
+  ok('align top / bottom / vcenter', same(alignPatches(items, 'top'), { 'n:b': { y: 0 }, 'n:c': { y: 0 } }) && same(alignPatches(items, 'bottom'), { 'n:a': { y: 70 }, 'n:b': { y: 70 } }) && same(alignPatches(items, 'vcenter'), { 'n:a': { y: 35 }, 'n:b': { y: 35 }, 'n:c': { y: 50 } }), alignPatches(items, 'vcenter'))
+  ok('align skips locked items and needs two', same(alignPatches([it('n:a', 0, 0, 10, 10), it('n:b', 50, 0, 10, 10, true)], 'right'), {}) && Object.keys(alignPatches([it('n:a', 0, 0, 10, 10)], 'left')).length === 0)
+  const row = [it('n:a', 0, 0, 100, 10), it('n:b', 150, 0, 100, 10), it('n:c', 600, 0, 100, 10)]
+  ok('distribute x: equal gaps, outer items fixed', same(distributePatches(row, 'x'), { 'n:b': { x: 300 } }), distributePatches(row, 'x'))
+  ok('distribute needs three items; y axis too', Object.keys(distributePatches(row.slice(0, 2), 'x')).length === 0 && same(distributePatches([it('n:a', 0, 0, 10, 100), it('n:b', 0, 120, 10, 100), it('n:c', 0, 500, 10, 100)], 'y'), { 'n:b': { y: 250 } }))
+  ok('distribute works from unsorted input', same(distributePatches([row[2]!, row[0]!, row[1]!], 'x'), { 'n:b': { x: 300 } }))
+}
+ok('constrainCreate box: shift makes a square, alt draws from the centre', same(constrainCreate('box', { x: 100, y: 100 }, { x: 160, y: 120 }, { shift: true }), { x: 100, y: 100, w: 60, h: 60 }) && same(constrainCreate('box', { x: 100, y: 100 }, { x: 60, y: 120 }, { shift: true }), { x: 60, y: 100, w: 40, h: 40 }) && same(constrainCreate('box', { x: 100, y: 100 }, { x: 130, y: 110 }, { alt: true }), { x: 70, y: 90, w: 60, h: 20 }) && same(constrainCreate('box', { x: 100, y: 100 }, { x: 130, y: 110 }, { shift: true, alt: true }), { x: 70, y: 70, w: 60, h: 60 }))
+ok('constrainCreate line: shift snaps to 15 degrees and keeps the length, alt centres', (() => {
+  const l = constrainCreate('line', { x: 0, y: 0 }, { x: 100, y: 3 }, { shift: true }); const l2 = constrainCreate('line', { x: 0, y: 0 }, { x: 100, y: 100 }, { shift: true }); const c = constrainCreate('line', { x: 50, y: 50 }, { x: 80, y: 50 }, { alt: true })
+  return Math.abs(l.h) < 1e-6 && Math.abs(l.w - Math.hypot(100, 3)) < 1e-3 && Math.abs(l2.w - l2.h) < 1e-3 && same(c, { x: 20, y: 50, w: 60, h: 0 }) && same(constrainCreate('line', { x: 5, y: 5 }, { x: -10, y: 7 }), { x: 5, y: 5, w: -15, h: 2 })
+})())
+ok('normBox and boxesIntersect (touching counts)', same(normBox({ x: 10, y: 10 }, { x: 0, y: 30 }), { x: 0, y: 10, w: 10, h: 20 }) && boxesIntersect({ x: 0, y: 0, w: 10, h: 10 }, { x: 10, y: 10, w: 5, h: 5 }) && !boxesIntersect({ x: 0, y: 0, w: 10, h: 10 }, { x: 11, y: 0, w: 5, h: 5 }))
+ok('noteGeometry: defaults (sticky 240 wide, others 360)', noteGeometry({}).w === 240 && noteGeometry({ kind: 'text' }).w === 360 && noteGeometry({ kind: 'rect', w: 10 }).w === 10)
+{
+  const cv: any = { boards: { 'a.html': { x: 0, y: 0, w: 400, h: 300, title: 'A', locked: true }, 'b.html': { x: 500, y: 0, w: 100, h: 100 } }, notes: { s: { x: 10, y: 10, text: 'hi' }, r: { kind: 'rect', x: 5, y: 5, w: 50, h: 40, group: 'g', locked: true, bind: { end: { type: 'note', id: 's' } } }, old: { kind: 'title1', x: 0, y: 0, w: 5 } } }
+  const refs = [{ type: 'note' as const, id: 's' }, { type: 'note' as const, id: 'r' }, { type: 'board' as const, id: 'a.html' }, { type: 'note' as const, id: 'old' }, { type: 'note' as const, id: 'gone' }]
+  const items = itemsFromCanvas(cv, refs)
+  ok('itemsFromCanvas resolves geometry and locks, skipping unknown ids', items.length === 4 && items[0]!.w === 240 && items[0]!.h === 120 && items[1]!.locked === true && items[2]!.kind === 'board' && items[2]!.locked === true, items)
+  const clip = copyPayload(cv, refs)
+  ok('copyPayload copies notes and boards by value', clip.notes.length === 3 && clip.boards.length === 1 && (clip.notes[0]!.note.x = 99) === 99 && cv.notes.s.x === 10)
+  ok('clipBox covers everything copied', (() => { const b = clipBox(copyPayload(cv, [{ type: 'note', id: 'r' }, { type: 'board', id: 'b.html' }]))!; return b.x === 5 && b.y === 0 && b.w === 595 })())
+  let n = 0
+  const pr = pasteOps(copyPayload(cv, refs), { dx: 20, dy: 30 }, () => 'p' + ++n)
+  ok('pasteOps: new ids, moved, legacy kinds skipped, group/lock/bind dropped, boards duplicated at the new place', pr.noteIds.join() === 'p1,p2' && same(pr.ops[1], { type: 'addNote', id: 'p2', note: { kind: 'rect', x: 25, y: 35, w: 50, h: 40 } }) && same(pr.ops[2], { type: 'duplicateBoard', path: 'a.html', x: 20, y: 30 }), pr.ops)
+  const applied = applyCanvasOps(cv, ['a.html', 'b.html'], pr.ops)
+  ok('pasted ops apply cleanly and leave the originals alone', Object.keys(applied.canvas.notes).length === 5 && applied.copyFiles[0]!.from === 'a.html' && applied.canvas.notes.r.x === 5, applied.copyFiles)
+  ok('patchOps builds updates from patches', same(patchOps({ 'n:a': { x: 1 }, 'b:p.html': { y: 2 } }), [{ type: 'updateNote', id: 'a', patch: { x: 1 } }, { type: 'updateBoard', path: 'p.html', patch: { y: 2 } }]))
 }
 
 // --- htmlEdit additions
