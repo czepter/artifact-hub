@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell' })
 import { KeyRound, Plus } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -64,8 +65,8 @@ useHead({ title: 'Account · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me" class="hub-ground center" role="status"><span class="muted">Loading…</span></div>
-  <AppShell v-else :me="me">
+  <p v-if="!me" class="px-1 text-sm text-muted-foreground" role="status">Loading…</p>
+  <template v-else>
     <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Account</h1>
     <div class="grid max-w-2xl gap-6">
       <Board label="Profile">
@@ -126,5 +127,5 @@ useHead({ title: 'Account · Artifact Hub' })
         <DialogFooter><Button variant="outline" @click="pwOpen = false">Cancel</Button><Button :disabled="!pw.current || pw.next.length < 10" @click="changePassword">Change password</Button></DialogFooter>
       </DialogContent>
     </Dialog>
-  </AppShell>
+  </template>
 </template>

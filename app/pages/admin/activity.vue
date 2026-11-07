@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell' })
 interface Ev { id: number, at: string, actor: string, kind: string, subject: string }
 const PHRASE: Record<string, string> = {
   created: 'created', published: 'published', commented: 'commented on', replied: 'replied on', shared: 'shared', unshared: 'removed a share link on',
@@ -16,8 +17,8 @@ useHead({ title: 'Activity · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me || !events" class="hub-ground center" role="status"><span class="muted">Loading…</span></div>
-  <AppShell v-else :me="me">
+  <p v-if="!me || !events" class="px-1 text-sm text-muted-foreground" role="status">Loading…</p>
+  <template v-else>
     <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Activity</h1>
     <Board label="Latest 200 events">
       <p v-if="!events.length" class="px-4 py-6 text-sm text-muted-foreground">Nothing has happened yet. Publishing, comments, share links, clients and members show up here.</p>
@@ -28,5 +29,5 @@ useHead({ title: 'Activity · Artifact Hub' })
         </li>
       </ul>
     </Board>
-  </AppShell>
+  </template>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell' })
 import { Pin } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 interface Row { id: string, title: string, current_version: number, updated_at: string, pinned: number, opened_at: string | null, opens: number }
@@ -23,10 +24,8 @@ useHead({ title: 'Artifacts · Artifact Hub' })
 </script>
 
 <template>
-  <AppShell v-if="rows && me" :me="me">
-    <template #actions>
-      <NewArtifactActions />
-    </template>
+  <template v-if="rows && me">
+    <Teleport defer to="#shell-actions"><NewArtifactActions /></Teleport>
     <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Artifacts</h1>
     <p v-if="!rows.length" class="px-1 text-sm text-muted-foreground">Nothing here yet. Connect an MCP client to <code class="rounded bg-muted px-1 py-0.5">{{ origin }}/mcp</code> and ask it to publish something.</p>
     <div class="grid gap-6">
@@ -43,5 +42,5 @@ useHead({ title: 'Artifacts · Artifact Hub' })
         </ul>
       </Board>
     </div>
-  </AppShell>
+  </template>
 </template>

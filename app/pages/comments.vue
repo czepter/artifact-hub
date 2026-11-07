@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell' })
 import { Check, MessageSquare } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,8 +21,8 @@ useHead({ title: 'Comments · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me || !threads" class="hub-ground center" role="status"><span class="muted">Loading…</span></div>
-  <AppShell v-else :me="me">
+  <p v-if="!me || !threads" class="px-1 text-sm text-muted-foreground" role="status">Loading…</p>
+  <template v-else>
     <div class="mb-5 flex flex-wrap items-end justify-between gap-3 px-1">
       <div>
         <h1 class="text-xl font-semibold tracking-tight">Comments</h1>
@@ -55,5 +56,5 @@ useHead({ title: 'Comments · Artifact Hub' })
         </li>
       </ul>
     </Board>
-  </AppShell>
+  </template>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell' })
 import { Copy } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,8 +26,8 @@ useHead({ title: 'Share links · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me || !shares" class="hub-ground center" role="status"><span class="muted">Loading…</span></div>
-  <AppShell v-else :me="me">
+  <p v-if="!me || !shares" class="px-1 text-sm text-muted-foreground" role="status">Loading…</p>
+  <template v-else>
     <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Share links</h1>
     <Board :label="`Active links (${shares.length})`">
       <p v-if="!shares.length" class="px-4 py-6 text-sm text-muted-foreground">No share links. Artifacts are private until someone creates one from the artifact's Share menu.</p>
@@ -45,5 +46,5 @@ useHead({ title: 'Share links · Artifact Hub' })
         </TableBody>
       </Table>
     </Board>
-  </AppShell>
+  </template>
 </template>

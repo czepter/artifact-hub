@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell' })
 import { Copy, Download } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,8 +31,8 @@ useHead({ title: 'Admin · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me || !o" class="hub-ground center" role="status"><span class="muted">Loading…</span></div>
-  <AppShell v-else :me="me">
+  <p v-if="!me || !o" class="px-1 text-sm text-muted-foreground" role="status">Loading…</p>
+  <template v-else>
     <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Overview</h1>
     <div class="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div class="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
@@ -63,5 +64,5 @@ useHead({ title: 'Admin · Artifact Hub' })
         <div class="border-t p-3"><Button as-child variant="outline" size="sm"><a href="/api/export" download><Download />Export all as zip</a></Button></div>
       </Board>
     </div>
-  </AppShell>
+  </template>
 </template>

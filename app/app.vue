@@ -4,6 +4,8 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 
 <template>
   <TooltipProvider :delay-duration="300">
-    <NuxtPage />
+    <NuxtLayout>
+      <NuxtPage />
+    </NuxtLayout>
   </TooltipProvider>
 </template>

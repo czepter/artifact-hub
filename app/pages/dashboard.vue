@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell' })
 import { MessageSquare, Pin } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -44,9 +45,9 @@ useHead({ title: 'Dashboard · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me || (!dash && !failed)" class="hub-ground center" role="status"><span class="muted">Loading…</span></div>
-  <AppShell v-else :me="me">
-    <template #actions><NewArtifactActions /></template>
+  <p v-if="!me || (!dash && !failed)" class="px-1 text-sm text-muted-foreground" role="status">Loading…</p>
+  <template v-else>
+    <Teleport defer to="#shell-actions"><NewArtifactActions /></Teleport>
     <div class="mb-5 px-1">
       <h1 class="text-xl font-semibold tracking-tight">Dashboard</h1>
       <p v-if="dash" class="text-sm text-muted-foreground">{{ facts }}</p>
@@ -124,5 +125,5 @@ useHead({ title: 'Dashboard · Artifact Hub' })
         </Board>
       </div>
     </div>
-  </AppShell>
+  </template>
 </template>

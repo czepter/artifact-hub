@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell' })
 const { me, authed, load: loadOwner } = useOwner()
 onMounted(async () => {
   await loadOwner()
@@ -9,9 +10,9 @@ useHead({ title: 'Clients · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me" class="hub-ground center" role="status"><span class="muted">Loading…</span></div>
-  <AppShell v-else :me="me">
+  <p v-if="!me" class="px-1 text-sm text-muted-foreground" role="status">Loading…</p>
+  <template v-else>
     <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Clients</h1>
     <ClientsBoard show-member />
-  </AppShell>
+  </template>
 </template>

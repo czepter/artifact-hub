@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell' })
 import { ChevronDown, Copy, MoreHorizontal, Plus } from '@lucide/vue'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -56,9 +57,9 @@ useHead({ title: 'Members · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me || !data" class="hub-ground center" role="status"><span class="muted">{{ error || 'Loading…' }}</span></div>
-  <AppShell v-else :me="me">
-    <template #actions><Button size="sm" @click="openInvite"><Plus />Invite</Button></template>
+  <p v-if="!me || !data" class="px-1 text-sm text-muted-foreground" role="status">{{ error || 'Loading…' }}</p>
+  <template v-else>
+    <Teleport defer to="#shell-actions"><Button size="sm" @click="openInvite"><Plus />Invite</Button></Teleport>
     <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Members</h1>
     <div class="grid gap-6">
       <Board :label="`People (${data.members.length})`">
@@ -140,5 +141,5 @@ useHead({ title: 'Members · Artifact Hub' })
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  </AppShell>
+  </template>
 </template>
