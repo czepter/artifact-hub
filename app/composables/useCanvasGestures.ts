@@ -85,7 +85,9 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
         const o = g.orig, pt = g.which === 'end' ? { x: o.x + o.w + wx, y: o.y + o.h + wy } : { x: o.x + wx, y: o.y + wy }
         const self = g.id
         const hit = e.altKey ? null : bindTargetAt(pt, arrows.targets().filter(t => !(t.type === 'note' && t.id === self)), 8 / k.value)
-        bindHint.value = hit; bindChange = { which: g.which, target: hit }
+        const other = arrows.bindOf(self)?.[g.which === 'end' ? 'start' : 'end']
+        const same = !!hit && !!other && other.type === hit.type && other.id === hit.id // both ends on one target would collapse it
+        bindHint.value = same ? null : hit; bindChange = { which: g.which, target: same ? null : hit }
       }
     }
     return first ? 'start' : true

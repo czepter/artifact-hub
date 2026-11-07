@@ -17,7 +17,7 @@ export function useCanvasClipboard(opts: {
   /** What is selected, without locked items (they cannot be moved, so they are not cloned either). */
   const snapshot = () => {
     const clip = copyPayload(opts.canvas() as never, selection.selected.value.filter(i => !i.locked).map(i => ({ type: i.key[0] === 'b' ? 'board' as const : 'note' as const, id: i.key.slice(2) })))
-    for (const n of clip.notes) { const g = n.note.bind && opts.geometry(n.id); if (g) Object.assign(n.note, g) } // copy a bound arrow where it is drawn
+    for (const n of clip.notes) { const g = n.note.bind && opts.geometry(n.id); if (g) Object.assign(n.note, { x: g.x, y: g.y, w: g.w, h: g.h }) } // copy a bound arrow where it is drawn
     return clip
   }
 

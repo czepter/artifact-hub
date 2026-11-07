@@ -24,8 +24,8 @@ const many = computed(() => props.sel.length > 1)
 const manyLabel = computed(() => { const b = props.sel.filter(s => s.type === 'board').length, n = props.sel.length - b; return [b && `${b} board${b === 1 ? '' : 's'}`, n && `${n} note${n === 1 ? '' : 's'}`].filter(Boolean).join(' and ') })
 const emitOp = (op: CanvasOp) => emit('ops', [op])
 const unlock = () => { if (one.value) emit('ops', lockOps([{ key: one.value.type === 'board' ? boardKey(one.value.id) : noteKey(one.value.id) }], false)) }
-/** Selected notes (for the style panel). */
-const selNotes = computed(() => props.sel.filter(s => s.type === 'note' && props.canvas?.notes?.[s.id]).map(s => ({ id: s.id, kind: props.canvas.notes[s.id].kind ?? 'sticky', note: props.canvas.notes[s.id] })))
+/** Selected notes for the style panel (locked ones are left out: they are not restyled). */
+const selNotes = computed(() => props.sel.filter(s => s.type === 'note' && props.canvas?.notes?.[s.id] && !props.canvas.notes[s.id].locked).map(s => ({ id: s.id, kind: props.canvas.notes[s.id].kind ?? 'sticky', note: props.canvas.notes[s.id] })))
 const ALIGN: { mode: AlignMode, label: string, icon: any }[] = [
   { mode: 'left', label: 'Align left', icon: AlignStartVertical }, { mode: 'hcenter', label: 'Align horizontal centres', icon: AlignCenterVertical }, { mode: 'right', label: 'Align right', icon: AlignEndVertical },
   { mode: 'top', label: 'Align top', icon: AlignStartHorizontal }, { mode: 'vcenter', label: 'Align vertical centres', icon: AlignCenterHorizontal }, { mode: 'bottom', label: 'Align bottom', icon: AlignEndHorizontal },

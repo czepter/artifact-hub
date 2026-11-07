@@ -323,7 +323,7 @@ export function resolveArrow(n: { x: number, y: number, w: number, h: number }, 
   if (!bind) return { x: n.x, y: n.y, w: n.w, h: n.h }
   const s0 = { x: n.x, y: n.y }, e0 = { x: n.x + n.w, y: n.y + n.h }
   const st = bind.start ? find(bind.start) : null, et = bind.end ? find(bind.end) : null
-  if (!st && !et) return { x: n.x, y: n.y, w: n.w, h: n.h }
+  if ((!st && !et) || (st && et && st.type === et.type && st.id === et.id)) return { x: n.x, y: n.y, w: n.w, h: n.h } // both ends on one target would collapse the arrow
   const s = st ? boundEndpoint(et ? centreOf(et.box) : e0, st.box, st.shape, gap) : s0
   const e = et ? boundEndpoint(st ? centreOf(st.box) : s0, et.box, et.shape, gap) : e0
   return { x: s.x, y: s.y, w: round1(e.x - s.x), h: round1(e.y - s.y) }

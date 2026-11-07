@@ -120,6 +120,8 @@ ok('duplicateBoard copyTo names the copy; existing path 409; bad path 400', (() 
   throws('only arrows can be bound', () => applyCanvasOps(cv, ['a.html'], [{ type: 'addNote', id: 'x', note: { kind: 'rect', w: 5, h: 5, bind: { end: { type: 'note', id: 'r' } } } }]), 400)
   throws('arrows cannot bind to lines or drawings', () => applyCanvasOps(cv, ['a.html'], [{ type: 'addNote', id: 'x', note: { kind: 'arrow', bind: { end: { type: 'note', id: 'lone' } } } }]), 400)
 }
+ok('resolveArrow: both ends on the same target stay as stored (no collapse)', (() => { const f = () => ({ type: 'note' as const, id: 'a', box: { x: 0, y: 0, w: 100, h: 100 }, shape: 'rect' as const }); const r = resolveArrow({ x: 10, y: 10, w: 30, h: 30 }, { start: { type: 'note', id: 'a' }, end: { type: 'note', id: 'a' } }, f); return r.w === 30 && r.h === 30 })())
+ok('detachBinds also writes the drawn size when it detaches', same(detachBinds([{ type: 'updateNote', id: 'ar', patch: { x: 5 } }], { ar: { kind: 'arrow', bind: { end: { type: 'note', id: 'a' } } } }, new Set(['n:ar']), () => ({ w: 99, h: -4 }))[0], { type: 'updateNote', id: 'ar', patch: { x: 5, w: 99, h: -4, bind: null } }))
 // limits stay
 throws('more than 200 operations rejected', () => applyCanvasOps(null, [], Array.from({ length: 201 }, (_, i) => ({ type: 'addNote' as const, id: 'n' + i, note: {} }))), 413)
 throws('more than 1000 notes rejected', () => { let c: any = null; for (let i = 0; i < 6; i++) c = applyCanvasOps(c, [], Array.from({ length: 200 }, (_, j) => ({ type: 'addNote' as const, id: `n${i}_${j}`, note: {} }))).canvas }, 413)

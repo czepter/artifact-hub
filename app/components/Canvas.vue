@@ -236,7 +236,8 @@ const send = (...ops: CanvasOp[]) => { if (ops.length) emit('canvasOps', ops) }
 /** Arrow-key nudges: repeats of the key fold into the same save and undo step. */
 const sendNudge = (...ops: CanvasOp[]) => { if (ops.length) emit('canvasOps', ops, 'nudge') }
 /** Moves and resizes: arrows moved without their targets come loose from them. */
-const sendMove = (ops: CanvasOp[]) => send(...detachBinds(ops, cv.value?.notes, new Set(selection.keys.value)))
+const drawnSize = (id: string) => notes.value.find(n => n.id === id)
+const sendMove = (ops: CanvasOp[]) => send(...detachBinds(ops, cv.value?.notes, new Set(selection.keys.value), drawnSize))
 
 function capture(e: PointerEvent) { try { viewport.value!.setPointerCapture(e.pointerId) } catch {} }
 
@@ -363,7 +364,8 @@ function finishCreate(d: Extract<Drag, { kind: 'create' }>, c: NonNullable<typeo
       // An arrow drawn from or to a board or note attaches to it.
       const tol = 8 / k.value, a = d.moved ? bindTargetAt({ x, y }, bindTargets.value, tol) : null, z = d.moved ? bindTargetAt({ x: x + w, y: y + h }, bindTargets.value, tol) : null
       const ref = (t: BindTargetBox | null) => (t && tool === 'arrow' && !alt ? { type: t.type, id: t.id } : undefined)
-      const bind = ref(a) || ref(z) ? { ...(ref(a) ? { start: ref(a) } : {}), ...(ref(z) ? { end: ref(z) } : {}) } : undefined
+      if (a && z && a.type === z.type && a.id === z.id) { /* both ends on one target: attach only the start */ }
+      const bind = ref(a) || ref(z) ? { ...(ref(a) ? { start: ref(a) } : {}), ...(ref(z) && !(a && z && a.id === z.id && a.type === z.type) ? { end: ref(z) } : {}) } : undefined
       send({ type: 'addNote', id, note: { kind: tool, x, y, w: round(w), h: round(h), ...(bind ? { bind } : {}) } })
       nextTick(() => selectNote(id))
     } else {
@@ -579,7 +581,7 @@ let shiftHeld = false
 /** Arrow keys move the selection; the viewer folds a held key into one save. */
 function nudge(key: string) {
   const step = shiftHeld ? 10 : 1
-  sendNudge(...detachBinds(nudgeOps(selection.selected.value, key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0), cv.value?.notes, new Set(selection.keys.value)))
+  sendNudge(...detachBinds(nudgeOps(selection.selected.value, key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0), cv.value?.notes, new Set(selection.keys.value), drawnSize))
 }
 
 /** Does the canvas own the keyboard? True after the last press landed on it, so a stray Ctrl+D elsewhere stays the browser's. */

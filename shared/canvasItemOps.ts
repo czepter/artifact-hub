@@ -174,7 +174,7 @@ export function styleOps(notes: { id: string, kind: string }[], change: StyleCha
  * An arrow that is moved or resized on its own comes loose from the things it was bound to: the update operations get
  * a `bind` patch without the ends whose target is not moving along (`moving`: selection keys).
  */
-export function detachBinds(ops: CanvasOp[], notes: Record<string, any> | undefined, moving: Set<string>): CanvasOp[] {
+export function detachBinds(ops: CanvasOp[], notes: Record<string, any> | undefined, moving: Set<string>, drawn?: (id: string) => { w: number, h: number } | undefined): CanvasOp[] {
   return ops.map((op) => {
     if (op.type !== 'updateNote' || (op.patch as any).bind !== undefined) return op
     const bind = notes?.[op.id]?.bind
@@ -185,6 +185,8 @@ export function detachBinds(ops: CanvasOp[], notes: Record<string, any> | undefi
       if (t && moving.has(t.type === 'board' ? boardKey(t.id) : noteKey(t.id))) keep[end] = t
     }
     if (Object.keys(keep).length === Number(!!bind.start) + Number(!!bind.end)) return op
-    return { ...op, patch: { ...op.patch, bind: Object.keys(keep).length ? keep : null } } as CanvasOp
+    // The arrow keeps the shape it is drawn with now: a stored size may be stale if a target moved since it was bound.
+    const g = drawn?.(op.id)
+    return { ...op, patch: { ...op.patch, ...(g ? { w: g.w, h: g.h } : {}), bind: Object.keys(keep).length ? keep : null } } as CanvasOp
   })
 }
