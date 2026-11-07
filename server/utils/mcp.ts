@@ -5,6 +5,7 @@ import {
   addComment, createShare, editFile, getArtifact, listArtifacts, listComments, listFiles, listVersions,
   publish, readFile, requireArtifact, resolveComment,
 } from './store'
+import { createWorkspace, getWorkspaceOf, listWorkspaces, moveArtifact, resolveWorkspaceId } from './workspaces'
 
 const GUIDE = `# Artifact Hub: how to publish
 
@@ -71,9 +72,9 @@ const fileSchema = z.object({
 })
 
 const TOOL_SCOPE: Record<string, string> = {
-  guide: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', data_list: 'read', data_get: 'read',
+  guide: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', data_list: 'read', data_get: 'read',
   reply_comment: 'comment', resolve_comment: 'comment',
-  create_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
+  create_artifact: 'write', create_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
   share_link: 'share',
 }
 
@@ -89,14 +90,32 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
 
   server.registerTool('guide', { description: 'How to structure artifacts and canvases. Read before the first publish.' }, () => text(GUIDE))
 
-  server.registerTool('list_artifacts', { description: 'List artifacts, most recently updated first.' }, () =>
-    text(listArtifacts().map(a => ({ id: a.id, title: a.title, version: a.current_version, updated_at: a.updated_at, url: `${origin}/a/${a.id}` }))))
+  server.registerTool('list_workspaces', { description: 'List workspaces (groups of artifacts) with their artifact counts. Artifacts without a named workspace live in the default one.' }, () =>
+    text(listWorkspaces()))
+
+  server.registerTool('create_workspace', {
+    description: 'Create a workspace to group artifacts. Names are unique (case-insensitive).',
+    inputSchema: { name: z.string().min(1).max(60), description: z.string().max(500).optional(), color: z.string().optional().describe('#rrggbb') },
+  }, ({ name, description, color }) => text(createWorkspace({ name, description, color })))
+
+  server.registerTool('move_artifact', {
+    description: 'Move an artifact to another workspace (id or name).',
+    inputSchema: { id: z.string(), workspace: z.string() },
+  }, ({ id, workspace }) => { requireArtifact(id); const w = moveArtifact(id, workspace); return text({ ok: true, workspace: { id: w.id, name: w.name } }) })
+
+  server.registerTool('list_artifacts', {
+    description: 'List artifacts, most recently updated first. Pass workspace (id or name) to list one workspace.',
+    inputSchema: { workspace: z.string().optional() },
+  }, ({ workspace }) =>
+    text(listArtifacts(workspace ? resolveWorkspaceId(workspace) : undefined).map(a => ({
+      id: a.id, title: a.title, version: a.current_version, updated_at: a.updated_at, workspace_id: a.workspace_id, url: `${origin}/a/${a.id}`,
+    }))))
 
   server.registerTool('create_artifact', {
-    description: 'Create an artifact (private to the owner). Needs index.html or canvas.json.',
-    inputSchema: { title: z.string().min(1).max(200), files: z.array(fileSchema).min(1), label: z.string().max(60).optional() },
-  }, ({ title, files, label }) => {
-    const r = publish({ title, files, label })
+    description: 'Create an artifact (private to the owner). Needs index.html or canvas.json. Optional workspace (id or name; default workspace if omitted).',
+    inputSchema: { title: z.string().min(1).max(200), files: z.array(fileSchema).min(1), label: z.string().max(60).optional(), workspace: z.string().optional() },
+  }, ({ title, files, label, workspace }) => {
+    const r = publish({ title, files, label, workspaceId: workspace })
     return text({ ...r, url: `${origin}/a/${r.id}` })
   })
 
@@ -108,7 +127,7 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     const v = version ?? a.current_version
     const canvas = readFile(id, v, 'canvas.json')?.content.toString('utf8')
     return text({
-      id: a.id, title: a.title, live_version: a.current_version, version: v, url: `${origin}/a/${a.id}`,
+      id: a.id, title: a.title, workspace: getWorkspaceOf(a.id), live_version: a.current_version, version: v, url: `${origin}/a/${a.id}`,
       files: listFiles(id, v), versions: listVersions(id), canvas_json: canvas ?? null,
     })
   })
