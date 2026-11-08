@@ -26,6 +26,7 @@ export default defineEventHandler((event) => {
     canvas,
     files: files.map(f => ({ path: f.path, rev: f.rev })),
     frameBase: `/f/${ref}@${version}/`,
+    thumbBase: `/api/view/${access.shareToken ?? artifact.id}/thumb?v=${version}&path=`,
     comments: listComments(artifact.id),
   }
 })

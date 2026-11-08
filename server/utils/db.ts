@@ -49,6 +49,14 @@ export function useDb(): DatabaseSync {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS thumbs (
+      artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+      path TEXT NOT NULL,
+      key TEXT NOT NULL,
+      jpeg BLOB NOT NULL,
+      PRIMARY KEY (artifact_id, path)
+    );
+
     CREATE TABLE IF NOT EXISTS comments (
       id TEXT PRIMARY KEY,
       artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,

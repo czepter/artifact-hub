@@ -31,6 +31,8 @@ export interface ViewData {
   canvas: { boards?: Record<string, unknown>, order?: string[], notes?: Record<string, unknown>, title?: string } | null
   files: { path: string, rev: number }[]
   frameBase: string
+  /** Append a URL-encoded board path for its picture. */
+  thumbBase: string
   comments: Comment[]
 }
 

@@ -42,6 +42,7 @@ jobs:
           context: .
           platforms: linux/${{ matrix.arch }}
           tags: ${{ env.IMAGE }}:${{ inputs.tag }}-${{ matrix.arch }}
+          build-args: WITH_CHROMIUM=1
           push: true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max

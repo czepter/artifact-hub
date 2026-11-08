@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 // The name row above a board: its title (double-click to rename) and a few actions. It keeps its size on screen at any zoom.
-const props = defineProps<{ board: { path: string, title: string, w: number }, k: number, canEdit: boolean, renaming: boolean, drawing: boolean }>()
+const props = defineProps<{ board: { path: string, title: string, w: number }, k: number, kiNow: () => number, canEdit: boolean, renaming: boolean, drawing: boolean }>()
 const emit = defineEmits<{ rename: [], commit: [title: string | null], tweaks: [], export: [], focus: [], play: [] }>()
 
 /** Header buttons keep their press to themselves, unless a drawing tool is active. */
@@ -18,7 +18,7 @@ function done(e: Event, cancel = false) { emit('commit', cancel ? null : (e.targ
 </script>
 
 <template>
-  <div class="board-title" :style="{ transform: `scale(${1 / k})`, width: board.w * k + 'px' }">
+  <div class="board-title" data-ki :style="{ '--ki': kiNow(), transform: 'scale(var(--ki))', width: `calc(${board.w}px / var(--ki))` }">
     <Input
       v-if="renaming" :ref="focusRename" class="rename" data-ui :default-value="board.title" aria-label="Board name"
       @keydown.enter="($event.target as HTMLInputElement).blur()" @keydown.esc.stop="done($event, true)" @blur="done($event)" @pointerdown.stop

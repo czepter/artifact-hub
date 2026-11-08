@@ -25,6 +25,8 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
   /** Snapping reaches this many screen px. */
   const SNAP_PX = 6
   const active = () => g !== null
+  let cand: Box[] | null = null // snap candidates, computed once per gesture (the moving items are excluded, so they do not change)
+  const candidates = () => (cand ??= others())
 
   function setOverride(key: string, patch: Ov) {
     const r = refOfKey(key)
@@ -34,6 +36,7 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
   /** Pressing a selectable thing: it becomes the selection (unless already part of one); a drag moves the whole selection. */
   function startMove(e: PointerEvent, key: string) {
     e.stopPropagation(); e.preventDefault() // no text selection, and no native drag that would cancel the pointer stream
+    cand = null
     if (!selection.has(key)) selection.setGroup(key)
     g = { kind: 'move', key, shift: e.shiftKey, clone: e.altKey, bbox: { ...(selection.bbox.value ?? { x: 0, y: 0, w: 0, h: 0 }) }, x: e.clientX, y: e.clientY, orig: selection.selected.value.filter(i => !i.locked).map(i => ({ key: i.key, x: i.x, y: i.y })), moved: false }
   }
@@ -42,6 +45,7 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
     e.stopPropagation(); e.preventDefault()
     const bbox = selection.bbox.value
     if (!bbox) return
+    cand = null
     g = { kind: 'resize', handle, x: e.clientX, y: e.clientY, items: selection.selected.value.map(i => ({ ...i, points: i.points?.map(p => [...p]) })), bbox: { ...bbox }, moved: false }
   }
   function startEndpoint(e: PointerEvent, n: { id: string, kind: string, x: number, y: number, w: number, h: number }, which: 'start' | 'end') {
@@ -64,7 +68,7 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
     if (g.kind === 'move') {
       guides.value = []
       if (snapping) {
-        const s = snapBox({ ...g.bbox, x: g.bbox.x + wx, y: g.bbox.y + wy }, others(), thr)
+        const s = snapBox({ ...g.bbox, x: g.bbox.x + wx, y: g.bbox.y + wy }, candidates(), thr)
         wx += s.dx; wy += s.dy; guides.value = s.guides
       }
       for (const o of g.orig) setOverride(o.key, { x: round1(o.x + wx), y: round1(o.y + wy) })
@@ -72,7 +76,7 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
       const ex = g.handle.includes('e') ? 1 : g.handle.includes('w') ? -1 : 0, ey = g.handle.includes('s') ? 1 : g.handle.includes('n') ? -1 : 0
       // Corner handles of a group keep the aspect ratio (Shift frees it); a single item is free (Shift keeps it).
       const keepAspect = e.shiftKey !== (g.items.length > 1 || g.items[0]?.kind === 'image') // (a picture keeps its proportions too)
-      const oth = snapping && !(keepAspect && ex && ey) ? others() : []
+      const oth = snapping && !(keepAspect && ex && ey) ? candidates() : []
       // Snap the edge being dragged to the edges and centres of other items.
       if (oth.length && ex) wx += snapLines([(ex > 0 ? g.bbox.x + g.bbox.w : g.bbox.x) + wx], oth.flatMap(o => [o.x, o.x + o.w / 2, o.x + o.w]), thr)
       if (oth.length && ey) wy += snapLines([(ey > 0 ? g.bbox.y + g.bbox.h : g.bbox.y) + wy], oth.flatMap(o => [o.y, o.y + o.h / 2, o.y + o.h]), thr)
@@ -96,7 +100,7 @@ export function useCanvasGestures(selection: ReturnType<typeof useCanvasSelectio
   /** Pointer released: the whole gesture as one batch (empty if nothing moved). */
   function end(): { moved: boolean, kind: G['kind'] | null, ops: CanvasOp[], clear: () => void, clone: { dx: number, dy: number } | null } {
     const d = g
-    g = null
+    g = null; cand = null
     guides.value = []; bindHint.value = null
     if (d && !d.moved && d.kind === 'move' && !d.shift && selection.count.value > 1) selection.setGroup(d.key) // a plain click on one of several selects just that one (its group)
     if (!d || !d.moved) return { moved: false, kind: d?.kind ?? null, ops: [], clear: () => {}, clone: null }
