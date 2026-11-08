@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forms</title><link rel="stylesheet" href="../_shared/css/tokens.css"><link rel="stylesheet" href="../_shared/css/components.css"><body><main class="sc"><div class="sc-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:24px">
+<div class="ui-field"><label class="ui-label" for="f1">Email</label><input id="f1" class="ui-input" type="email" placeholder="you@example.com"><p class="ui-help">We send the invite link here.</p></div>
+<div class="ui-field"><label class="ui-label" for="f2">Email · focused</label><input id="f2" class="ui-input ui-focus" value="dev@example.test"></div>
+<div class="ui-field"><label class="ui-label" for="f3">Email · error</label><input id="f3" class="ui-input" aria-invalid="true" value="dev@" aria-describedby="e3"><p id="e3" class="ui-error" role="alert">Enter a full address, like dev@example.test.</p></div>
+<div class="ui-field"><label class="ui-label" for="f4">Disabled</label><input id="f4" class="ui-input" disabled value="Locked"></div>
+<div class="ui-field"><label class="ui-label" for="f5">Comment</label><textarea id="f5" class="ui-textarea" placeholder="Reply…"></textarea></div>
+<div class="ui-field"><label class="ui-label" for="f6">Workspace</label><button id="f6" class="ui-select" type="button" aria-haspopup="listbox"><span>General</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
+</div>
+<section><h2>Checkbox · switch</h2><div style="display:grid;gap:12px">
+<label class="ui-label"><input class="ui-checkbox" type="checkbox" checked> Notify me about replies</label>
+<label class="ui-label"><input class="ui-checkbox" type="checkbox"> Weekly digest</label>
+<label class="ui-label"><input class="ui-checkbox" type="checkbox" disabled> Disabled</label>
+<label class="ui-label"><input class="ui-switch" type="checkbox" role="switch" checked> Allow comments</label>
+<label class="ui-label"><input class="ui-switch" type="checkbox" role="switch"> Require sign-in</label>
+</div></section>
+<section><h2>Input group · radio · indeterminate · counter</h2><div class="sc-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:24px">
+<div class="ui-field"><label class="ui-label" for="g1">Search artifacts</label><div class="ui-input-group"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="../icons.svg#search"/></svg><input id="g1" placeholder="Title or board name"><span class="ui-kbd">/</span></div></div>
+<div class="ui-field" data-required><label class="ui-label" for="g2">Board name</label><input id="g2" class="ui-input" aria-invalid="true" aria-describedby="g2e"><p id="g2e" class="ui-error" role="alert">Give the board a name.</p></div>
+<div class="ui-field"><label class="ui-label" for="g3">Reply</label><textarea id="g3" class="ui-textarea" placeholder="Reply…"></textarea><p class="ui-counter">0 / 2000</p></div>
+<div style="display:grid;gap:12px"><label class="ui-choice"><input class="ui-radio" type="radio" name="r" checked><span>Can comment<small>Anyone with the link can read and reply.</small></span></label><label class="ui-choice"><input class="ui-radio" type="radio" name="r"><span>View only<small>The link shows the artifact, nothing else.</small></span></label>
+<label class="ui-choice"><input class="ui-checkbox" type="checkbox" id="ind"><span>Select all boards<small>3 of 7 selected</small></span></label></div>
+</div></section>
+<section style="max-width:320px"><h2>Slider</h2><div class="ui-slider"><div class="ui-slider-track"><div class="ui-slider-range" style="width:60%"></div></div><div class="ui-slider-thumb" style="left:60%"></div></div></section>
+<script>document.getElementById("ind").indeterminate=true</script></main></body></html>

@@ -38,6 +38,12 @@ Tools: `guide`, `list_artifacts`, `create_artifact`, `get_artifact`, `read_file`
 `create_artifact` and `list_artifacts` take an optional `workspace` (id or name). Workspace tools follow the grant's scopes
 like the rest (`list_workspaces` needs read; `create_workspace`, `update_workspace`, `delete_workspace` (owner only) and `move_artifact` need write, so commenters never get them).
 
+### Dashboard, search and review endpoints
+- `GET /api/artifacts?cards=1` adds a live preview, open comment threads, `canvas` and `shared` to each artifact; `?q=` filters by title or canvas board title (accent- and case-insensitive).
+- `GET /api/comments/:threadId` returns one thread with all messages (root first), the board, anchor, version and attachments; reply ids are 404.
+- `GET /api/search?q=` feeds the Cmd/Ctrl+K palette: up to 8 artifacts by title and 5 waiting threads (empty `q` returns recent artifacts and waiting threads). Tests: `tests/comments-thread-test.mjs`, `tests/search-test.mjs`.
+- `HUB_BUILD_DIR` (default `.nuxt`) lets several dev servers run from one checkout. Keep it inside the repo: a build dir elsewhere breaks reka-ui type resolution in dev.
+
 ## Workspaces
 A workspace is a named container (name, description, colour, icon) that groups artifacts. Every artifact is in exactly one;
 existing artifacts migrate into an auto-created default workspace ("General", id `default`) on startup (idempotent).

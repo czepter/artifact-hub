@@ -1,0 +1,3 @@
+/* Compact icon: <svg class="i"><use href="../icons.svg#name"/></svg>. Stroke style lives here, not in every tag. */
+svg.i { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.lead { width: 20px; height: 20px; color: var(--muted-foreground); }

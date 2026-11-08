@@ -1,0 +1,58 @@
+/* Button and button group. data-variant / data-size mirror app/components/ui/button. */
+/* Button */
+.ui-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: var(--control-h); padding: 0 16px;
+  border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; font-size: var(--text-sm); font-weight: var(--w-label); white-space: nowrap;
+  cursor: pointer; transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur-fast) var(--ease); flex-shrink: 0; position: relative; user-select: none; }
+.ui-btn:where(a) { text-decoration: none; color: inherit; }
+.ui-btn svg { width: 16px; height: 16px; flex-shrink: 0; pointer-events: none; }
+.ui-btn:disabled, .ui-btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+.ui-btn[data-variant="default"] { background: var(--primary); color: var(--primary-foreground); }
+.ui-btn[data-variant="default"]:hover { background: color-mix(in srgb, var(--primary) 90%, transparent); }
+.ui-btn[data-variant="destructive"] { background: var(--destructive); color: var(--destructive-foreground); }
+.ui-btn[data-variant="destructive"]:hover { background: color-mix(in srgb, var(--destructive) 90%, transparent); }
+.ui-btn[data-variant="outline"] { background: var(--background); border-color: var(--border); box-shadow: var(--shadow-xs); }
+.ui-btn[data-variant="outline"]:hover { background: var(--accent); color: var(--accent-foreground); }
+.ui-btn[data-variant="secondary"] { background: var(--secondary); color: var(--secondary-foreground); }
+.ui-btn[data-variant="secondary"]:hover { background: color-mix(in srgb, var(--secondary) 80%, transparent); }
+.ui-btn[data-variant="ghost"]:hover { background: var(--accent); color: var(--accent-foreground); }
+.ui-btn[data-variant="link"] { color: var(--primary); }
+.ui-btn[data-variant="link"]:hover { text-decoration: underline; text-underline-offset: 4px; }
+.ui-btn[data-size="xs"] { height: var(--control-h-xs); padding: 0 8px; gap: 4px; font-size: var(--text-xs); }
+.ui-btn[data-size="xs"] svg { width: 12px; height: 12px; }
+.ui-btn[data-size="sm"] { height: var(--control-h-sm); padding: 0 12px; gap: 6px; }
+.ui-btn[data-size="lg"] { height: var(--control-h-lg); padding: 0 24px; }
+.ui-btn[data-size="icon"] { width: var(--control-h); padding: 0; }
+.ui-btn[data-size="icon-sm"] { width: var(--control-h-sm); height: var(--control-h-sm); padding: 0; }
+.ui-btn[data-size="icon-xs"] { width: var(--control-h-xs); height: var(--control-h-xs); padding: 0; }
+.ui-btn[data-size="icon-lg"] { width: var(--control-h-lg); height: var(--control-h-lg); padding: 0; }
+.ui-btn-group { display: inline-flex; }
+.ui-btn-group > .ui-btn { border-radius: 0; }
+.ui-btn-group > .ui-btn:first-child { border-radius: var(--radius-md) 0 0 var(--radius-md); }
+.ui-btn-group > .ui-btn:last-child { border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.ui-btn-group > .ui-btn + .ui-btn { margin-left: -1px; }
+
+/* Pressed: every variant sinks 1px and moves one step toward more contrast with its ground (filled variants darken in both themes), so a click is felt before the action lands. */
+.ui-btn:not(:disabled):not([aria-disabled="true"]):active { transform: translateY(1px); }
+.ui-btn[data-variant="default"]:active, .ui-btn[data-variant="destructive"]:active { box-shadow: inset 0 0 0 999px rgb(0 0 0 / .16); }
+.ui-btn[data-variant="outline"]:active, .ui-btn[data-variant="ghost"]:active { background: color-mix(in srgb, var(--accent) 100%, var(--foreground) 6%); }
+.ui-btn[data-variant="secondary"]:active { background: color-mix(in srgb, var(--secondary) 100%, var(--foreground) 8%); }
+
+/* Toggled (aria-pressed) reads as selected without adding a second accent. */
+.ui-btn[aria-pressed="true"]:not([data-variant="default"]) { background: var(--accent); color: var(--accent-foreground); box-shadow: inset 0 0 0 1px var(--input); }
+
+/* Quiet destructive: outline that turns alarm only on intent. The filled variant stays for the confirmed step. */
+.ui-btn[data-variant="destructive-quiet"] { background: transparent; color: var(--destructive); border-color: color-mix(in srgb, var(--destructive) 40%, var(--border)); }
+.ui-btn[data-variant="destructive-quiet"]:hover { background: color-mix(in srgb, var(--destructive) 10%, transparent); }
+.ui-btn[data-variant="destructive-quiet"]:active { background: color-mix(in srgb, var(--destructive) 18%, transparent); }
+
+/* Loading: the label stays (width never jumps); a spinner takes the icon slot, input is blocked, aria-busy tells assistive tech. */
+.ui-btn[data-loading], .ui-btn[aria-busy="true"] { pointer-events: none; cursor: progress; }
+.ui-btn[data-loading]::before, .ui-btn[aria-busy="true"]::before { content: ""; width: 14px; height: 14px; flex-shrink: 0; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: ui-spin .7s linear infinite; }
+.ui-btn[data-loading] > svg, .ui-btn[aria-busy="true"] > svg { display: none; }
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+
+/* Icon-only buttons keep their glyph centred and get a larger hit area without growing the visual. */
+.ui-btn[data-size^="icon"]::after { content: ""; position: absolute; inset: -4px; }
+.ui-btn-group > .ui-btn:focus-visible { z-index: 1; }
+.ui-btn[data-variant="link"] { padding-inline: 4px; height: auto; min-height: var(--control-h-xs); text-underline-offset: 4px; }
+@media (pointer: coarse) { .ui-btn { min-height: var(--hit-min); } .ui-btn[data-size^="icon"] { min-width: var(--hit-min); } }

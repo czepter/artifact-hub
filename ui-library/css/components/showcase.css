@@ -1,0 +1,9 @@
+/* Showcase scaffolding for the boards themselves (not part of the library) */
+.sc { padding: 24px; display: grid; gap: 28px; }
+.sc h2 { margin: 0 0 10px; font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+.sc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.sc-grid { align-items: start; display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.sc-swatch { display: grid; gap: 6px; font-size: 12px; }
+.sc-swatch i { display: block; height: 48px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.sc-swatch code { color: var(--muted-foreground); font-size: 11px; }
+.sc-stage { padding: 24px; border: 1px dashed var(--border); border-radius: var(--radius-lg); display: grid; place-items: start; }

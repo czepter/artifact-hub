@@ -9,18 +9,13 @@ const props = defineProps<{ workspace?: string }>()
 const fileInput = ref<{ $el: HTMLInputElement }>()
 const busy = ref(false)
 const msg = ref('')
+const creator = useNewCanvas()
 const errOf = (e: any, fallback: string) => e?.data?.statusMessage ?? e?.statusMessage ?? fallback
 
 async function newCanvas() {
   busy.value = true
   msg.value = ''
-  try {
-    const canvas = { v: 1, title: 'Untitled canvas', boards: {}, order: [], notes: {} }
-    const r = await $fetch<{ id: string }>('/api/artifacts', {
-      method: 'POST', body: { title: 'Untitled canvas', files: [{ path: 'canvas.json', content: JSON.stringify(canvas, null, 2) }], label: 'New canvas', workspaceId: props.workspace },
-    })
-    await navigateTo(`/a/${r.id}`, { external: true })
-  } catch (e) { msg.value = errOf(e, 'Could not create the canvas') } finally { busy.value = false }
+  try { await creator.newCanvas(props.workspace); msg.value = creator.msg.value } finally { busy.value = false }
 }
 async function importZip(e: Event) {
   const input = e.target as HTMLInputElement

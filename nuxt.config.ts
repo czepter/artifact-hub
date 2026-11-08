@@ -2,6 +2,8 @@ import tailwindcss from '@tailwindcss/vite'
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
+  // Several dev servers can run side by side from one checkout (parallel work, tests): HUB_BUILD_DIR gives each its own build dir.
+  buildDir: process.env.HUB_BUILD_DIR || '.nuxt',
   modules: ['shadcn-nuxt'],
   shadcn: { prefix: '', componentDir: './app/components/ui' },
   vite: { plugins: [tailwindcss()] },

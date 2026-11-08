@@ -1,0 +1,20 @@
+/* Consent presets: three plain choices instead of four scope checkboxes. The exact scopes stay one disclosure away. */
+.presets { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.preset { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer; transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
+.preset:hover { background: var(--accent); }
+.preset:has(:checked) { border-color: var(--foreground); background: color-mix(in srgb, var(--muted) 55%, transparent); }
+.preset:has(:focus-visible) { box-shadow: 0 0 0 var(--ring-width) color-mix(in srgb, var(--ring) 50%, transparent); }
+.preset .ui-radio { margin-top: 2px; }
+.preset-title { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); font-weight: var(--w-label); }
+.preset-desc { grid-column: 2; font-size: var(--text-xs); color: var(--muted-foreground); }
+.preset-scopes { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.custom { border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.custom > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; font-size: var(--text-sm); font-weight: var(--w-label); cursor: pointer; list-style: none; }
+.custom > summary::-webkit-details-marker { display: none; }
+.custom > summary::after { content: ""; width: 7px; height: 7px; border: solid var(--muted-foreground); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); transition: transform var(--dur) var(--ease); }
+.custom[open] > summary::after { transform: rotate(-135deg); }
+.custom .scope:first-of-type { border-top: 1px solid var(--border); }
+.custom .scope { padding-inline: 14px; }
+.redirect { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: var(--radius-lg); font-size: var(--text-xs); color: var(--muted-foreground); }
+.redirect b { font-weight: var(--w-label); color: var(--foreground); }
+@media (max-width: 520px) { .consent-actions { flex-direction: column-reverse; } .consent-actions .ui-btn { width: 100%; min-height: var(--hit-min, 44px); } }
