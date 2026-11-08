@@ -6,5 +6,6 @@ import { resolveWorkspaceId } from '../../utils/workspaces'
 export default defineEventHandler((event) => {
   requireMember(event)
   const ws = getQuery(event).workspace
-  return listArtifacts(typeof ws === 'string' && ws ? resolveWorkspaceId(ws) : undefined)
+  const archived = getQuery(event).archived ? 'only' : 'hide' // ?archived=1 lists the archive instead
+  return listArtifacts(typeof ws === 'string' && ws ? resolveWorkspaceId(ws) : undefined, false, archived)
 })

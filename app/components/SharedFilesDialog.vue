@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A workspace's shared files: tokens, component styles, scripts, images that boards of any of its artifacts link
 // as `_shared/<path>`. Live links, so saving a file here updates every board that uses it.
-import { ArrowLeft, Copy, FilePlus2, Trash2, Upload } from '@lucide/vue'
+import { ArrowLeft, Copy, FilePlus2, LayoutDashboard, Trash2, Upload } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -13,6 +13,7 @@ const props = defineProps<{ workspace: WorkspaceInfo, canEdit: boolean }>()
 const open = defineModel<boolean>('open', { required: true })
 
 const files = ref<SharedFile[]>([])
+const artifactId = ref<string | null>(null)
 const loading = ref(false)
 const error = ref('')
 const busy = ref(false)
@@ -27,9 +28,22 @@ const msg = (e: any, fallback: string) => e?.data?.statusMessage ?? e?.statusMes
 
 async function load() {
   loading.value = true
-  try { files.value = (await $fetch<{ files: SharedFile[] }>(`/api/workspaces/${props.workspace.id}/files`)).files } catch (e) { error.value = msg(e, 'Could not load the shared files') } finally { loading.value = false }
+  try {
+    const r = await $fetch<{ files: SharedFile[], artifactId: string | null }>(`/api/workspaces/${props.workspace.id}/files`)
+    files.value = r.files; artifactId.value = r.artifactId
+  } catch (e) { error.value = msg(e, 'Could not load the shared files') } finally { loading.value = false }
 }
 watch(open, (o) => { if (o) { editing.value = null; error.value = ''; void load() } }, { immediate: true })
+
+/** The library is a canvas: HTML components are boards to look at, comment on and edit; every save is a version. */
+async function openCanvas() {
+  error.value = ''
+  try {
+    const id = artifactId.value ?? (await $fetch<{ artifactId: string }>(`/api/workspaces/${props.workspace.id}/files`, { query: { open: 1 } })).artifactId
+    open.value = false
+    await navigateTo(`/a/${id}`)
+  } catch (e) { error.value = msg(e, 'Could not open the canvas') }
+}
 
 async function edit(f: SharedFile) {
   error.value = ''
@@ -81,6 +95,7 @@ async function copyRef(f: SharedFile) {
         <DialogDescription>
           Link a file from any board in this workspace as <code class="rounded bg-muted px-1 py-0.5 text-xs">_shared/&lt;path&gt;</code>.
           It is a live link: saving a file here updates every board that uses it.
+          HTML files show up as boards on the library’s canvas, where you can view, comment and edit them.
         </DialogDescription>
       </DialogHeader>
 
@@ -113,10 +128,13 @@ async function copyRef(f: SharedFile) {
             <Button v-if="canEdit" variant="ghost" size="icon" class="size-8" :aria-label="`Remove ${f.ref}`" @click="remove(f)"><Trash2 /></Button>
           </li>
         </ul>
-        <div v-if="canEdit" class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap gap-2">
+          <Button size="sm" @click="openCanvas"><LayoutDashboard />Open canvas</Button>
+          <template v-if="canEdit">
           <Button size="sm" variant="outline" @click="startNew"><FilePlus2 />New file</Button>
           <Button size="sm" variant="outline" @click="upload?.click()"><Upload />Upload…</Button>
           <input ref="upload" type="file" multiple class="hidden" @change="picked">
+          </template>
         </div>
       </template>
       <Alert v-if="error" variant="destructive" role="alert"><AlertDescription>{{ error }}</AlertDescription></Alert>

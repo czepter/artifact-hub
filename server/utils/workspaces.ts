@@ -81,13 +81,13 @@ const toWorkspace = (r: WorkspaceRow & { n: number }): Workspace => ({
 
 export function listWorkspaces(): Workspace[] {
   const rows = useDb().prepare(`
-    SELECT w.*, (SELECT COUNT(*) FROM artifacts a WHERE a.workspace_id = w.id) AS n
+    SELECT w.*, (SELECT COUNT(*) FROM artifacts a WHERE a.workspace_id = w.id AND a.kind = 'artifact') AS n
     FROM workspaces w ORDER BY w.is_default DESC, lower(w.name)`).all() as unknown as (WorkspaceRow & { n: number })[]
   return rows.map(toWorkspace)
 }
 
 export function getWorkspace(id: string): Workspace | undefined {
-  const r = useDb().prepare('SELECT w.*, (SELECT COUNT(*) FROM artifacts a WHERE a.workspace_id = w.id) AS n FROM workspaces w WHERE w.id = ?').get(id) as unknown as (WorkspaceRow & { n: number }) | undefined
+  const r = useDb().prepare('SELECT w.*, (SELECT COUNT(*) FROM artifacts a WHERE a.workspace_id = w.id AND a.kind = \'artifact\') AS n FROM workspaces w WHERE w.id = ?').get(id) as unknown as (WorkspaceRow & { n: number }) | undefined
   return r && toWorkspace(r)
 }
 
@@ -139,11 +139,14 @@ export function deleteWorkspace(id: string) {
   if (w.artifactCount > 0) {
     throw bad(`“${w.name}” still holds ${w.artifactCount} artifact${w.artifactCount === 1 ? '' : 's'}. Move them to another workspace first.`, 409)
   }
+  useDb().prepare("DELETE FROM artifacts WHERE workspace_id = ? AND kind = 'shared'").run(id) // its shared-files library goes with it
   useDb().prepare('DELETE FROM workspaces WHERE id = ?').run(id)
   try { logEvent('workspace deleted', w.name) } catch { /* ignore */ }
 }
 
 export function moveArtifact(artifactId: string, workspaceRef: string) {
+  const cur = useDb().prepare('SELECT kind FROM artifacts WHERE id = ?').get(artifactId) as { kind: string } | undefined
+  if (cur?.kind === 'shared') throw bad("The workspace's shared files cannot be moved", 409)
   const target = requireWorkspace(resolveWorkspaceId(workspaceRef))
   const r = useDb().prepare('UPDATE artifacts SET workspace_id = ? WHERE id = ?').run(target.id, artifactId)
   if (!r.changes) throw bad('Artifact not found', 404)

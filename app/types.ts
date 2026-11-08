@@ -24,7 +24,7 @@ export interface Comment {
 }
 
 export interface ViewData {
-  artifact: { id: string, title: string, version: number, live: number, updatedAt: string, workspaceId: string }
+  artifact: { id: string, title: string, version: number, live: number, updatedAt: string, workspaceId: string, kind?: 'artifact' | 'shared', archived?: boolean }
   versions: { version: number, label: string | null, created_at: string }[]
   role: 'owner' | 'comment' | 'view'
   email: string | null

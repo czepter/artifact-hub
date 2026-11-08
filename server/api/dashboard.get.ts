@@ -27,9 +27,9 @@ export default defineEventHandler((event) => {
     SELECT a.id, a.title, a.current_version, a.updated_at, a.pinned, a.opened_at, a.opens,
            (SELECT COUNT(*) FROM comments c WHERE c.artifact_id = a.id AND c.parent_id IS NULL AND c.resolved = 0) AS open_comments,
            EXISTS(SELECT 1 FROM files f WHERE f.artifact_id = a.id AND f.version = a.current_version AND f.path = 'canvas.json') AS canvas
-    FROM artifacts a ORDER BY a.pinned DESC, a.updated_at DESC LIMIT 6
+    FROM artifacts a WHERE a.kind = 'artifact' AND a.archived_at IS NULL ORDER BY a.pinned DESC, a.updated_at DESC LIMIT 6
   `).all()
-  const total = (db.prepare('SELECT COUNT(*) AS n FROM artifacts').get() as { n: number }).n
+  const total = (db.prepare('SELECT COUNT(*) AS n FROM artifacts WHERE kind = \'artifact\' AND archived_at IS NULL').get() as { n: number }).n
   return { recent: (recent as { id: string, current_version: number }[]).map(r => ({ ...r, thumb: thumbFor(r.id, r.current_version) })), total, waiting: waiting.slice(0, 20), waitingCount: waiting.length, openThreads, shareLinks }
 })
 
