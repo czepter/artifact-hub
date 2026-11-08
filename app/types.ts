@@ -30,6 +30,8 @@ export interface ViewData {
   email: string | null
   canvas: { boards?: Record<string, unknown>, order?: string[], notes?: Record<string, unknown>, title?: string } | null
   files: { path: string, rev: number }[]
+  /** Changes when the workspace's shared files change: boards reload. */
+  sharedRev: number
   frameBase: string
   /** Append a URL-encoded board path for its picture. */
   thumbBase: string

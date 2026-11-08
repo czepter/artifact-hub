@@ -14,7 +14,8 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { cleanPath, readFile } from '../store'
+import { cleanPath } from '../store'
+import { readServedFile } from '../sharedFiles'
 import { instrumentHtml } from '../frame'
 import { dcSupportJs } from '../dc'
 
@@ -133,7 +134,7 @@ async function drawOne(ctx: any, artifactId: string, version: number, it: ShotIt
     if (url.origin !== ORIGIN) return route.abort()
     try {
       const path = cleanPath(decodeURIComponent(url.pathname.slice(1)) || 'index.html')
-      let file = readFile(artifactId, version, path)
+      let file = readServedFile(artifactId, version, path)
       if (/(^|\/)support\.js$/.test(path) && (!file || file.content.toString('utf8', 0, 400_000).includes('DCLogic'))) file = { content: Buffer.from(await dcSupportJs()), contentType: 'text/javascript; charset=utf-8' }
       if (!file) return route.fulfill({ status: 404, body: 'not found' })
       const body = file.contentType.startsWith('text/html') ? instrumentHtml(file.content.toString('utf8'), { props: tweaks(path) }) : file.content

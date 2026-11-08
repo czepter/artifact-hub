@@ -4,6 +4,7 @@ import { logEvent } from './events'
 import { useDb, now } from './db'
 import { emitArtifact } from './bus'
 import { resolveWorkspaceId } from './workspaces'
+import { referencedSharedFiles } from './sharedFiles'
 
 export const LIMITS = { fileBytes: 5 * 1024 * 1024, versionBytes: 20 * 1024 * 1024, files: 500 }
 
@@ -89,6 +90,7 @@ export function publish(opts: {
     const buf = Buffer.from(f.content, f.encoding === 'base64' ? 'base64' : 'utf8')
     if (buf.length > LIMITS.fileBytes) throw createError({ statusCode: 413, statusMessage: `${f.path} exceeds ${LIMITS.fileBytes} bytes` })
     const path = cleanPath(f.path)
+    if (path.startsWith('_shared/')) throw createError({ statusCode: 400, statusMessage: `${path}: the _shared/ folder is the workspace's shared files and cannot be published into an artifact` })
     return { path, buf, type: contentTypeFor(path) }
   })
 
@@ -348,5 +350,8 @@ export function duplicateArtifact(id: string) {
 export function exportFiles(id: string, version?: number) {
   const a = requireArtifact(id)
   const v = version ?? a.current_version
-  return { artifact: a, files: listFiles(id, v).map(f => ({ name: f.path, data: readFile(id, v, f.path)!.content })) }
+  const own = listFiles(id, v).map(f => ({ name: f.path, data: readFile(id, v, f.path)!.content }))
+  // Boards that link `_shared/…` files keep working offline: the ones they point at travel in the zip.
+  const shared = referencedSharedFiles(id, v).map(f => ({ name: f.path, data: f.content }))
+  return { artifact: a, files: [...own, ...shared] }
 }

@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto'
 import { useDb } from '../db'
 import { listFiles, readFile } from '../store'
+import { sharedRevOfArtifact } from '../sharedFiles'
 import { htmlRendererAvailable, shootBoards } from './browser'
 
 const SCALE = 0.5
@@ -23,7 +24,7 @@ export function thumbInfo(id: string, version: number, path: string, files = lis
   const assets = Math.max(0, ...files.filter(f => !f.content_type.startsWith('text/html') && f.path !== 'canvas.json').map(f => f.rev))
   const clamp = (n: number) => Math.min(8000, Math.max(1, n))
   const w = clamp(Math.round(+b.w || 800)), h = clamp(Math.round(+b.h || 600))
-  return { key: createHash('sha1').update(JSON.stringify([own.rev, assets, w, h, b.tweaks ?? null])).digest('base64url').slice(0, 16), w, h, tweaks: b.tweaks }
+  return { key: createHash('sha1').update(JSON.stringify([own.rev, assets, sharedRevOfArtifact(id), w, h, b.tweaks ?? null])).digest('base64url').slice(0, 16), w, h, tweaks: b.tweaks }
 }
 
 // One at a time: a canvas asks for every board at once, and each picture is a browser page on this server.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'shell', access: 'member' })
-import { MoreHorizontal, Pencil, Pin, Trash2 } from '@lucide/vue'
+import { Library, MoreHorizontal, Pencil, Pin, Trash2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
@@ -33,6 +33,7 @@ async function move(r: Row, workspaceId: string) {
 }
 
 const editing = ref(false)
+const sharedOpen = ref(false)
 const deleting = ref(false)
 const deleteError = ref('')
 async function renamed() { await loadWorkspaces() }
@@ -58,6 +59,7 @@ async function removeWs() {
       <DropdownMenuTrigger as-child><Button variant="ghost" size="icon" class="size-8 shrink-0" aria-label="Workspace actions"><MoreHorizontal /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem @select="editing = true"><Pencil />Edit workspace</DropdownMenuItem>
+        <DropdownMenuItem @select="sharedOpen = true"><Library />Shared files…</DropdownMenuItem>
         <template v-if="me?.role === 'owner' && !ws.isDefault">
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" @select="deleteError = ''; deleting = true"><Trash2 />Delete workspace</DropdownMenuItem>
@@ -92,6 +94,7 @@ async function removeWs() {
     </div>
   </template>
   <WorkspaceDialog v-model:open="editing" :workspace="ws" @saved="renamed" />
+  <SharedFilesDialog v-if="ws" v-model:open="sharedOpen" :workspace="ws" :can-edit="canEdit" />
   <AlertDialog v-model:open="deleting">
     <AlertDialogContent>
       <AlertDialogHeader>

@@ -3,15 +3,15 @@ import type { DatabaseSync } from 'node:sqlite'
 import { useDb, now } from './db'
 import { logEvent } from './events'
 import { emitArtifact } from './bus'
+import { ensureSharedFilesSchema } from './sharedFiles'
 
 /**
  * Workspaces group artifacts. Every artifact belongs to exactly one; the auto-created default workspace
  * (id `default`) holds everything that predates workspaces and anything created without naming one.
  *
- * Extension point: `settings` is a JSON object owned by the workspace. Design tokens and a component library
- * are meant to live under keys such as `settings.tokens` and `settings.components` (or, when they outgrow a
- * JSON blob, in their own tables keyed by `workspace_id`). Nothing reads those keys yet; `getSettings` and
- * `patchSettings` are the only access path so the shape can change in one place.
+ * Extension point: `settings` is a JSON object owned by the workspace (today: `sharedRev`, the change counter of the
+ * shared-files library in sharedFiles.ts). Design tokens and a component registry can build on that library or live
+ * under further keys; `getSettings` and `patchSettings` are the only access path so the shape can change in one place.
  */
 export const DEFAULT_WORKSPACE_ID = 'default'
 
@@ -47,6 +47,7 @@ export function ensureWorkspaceSchema(db: DatabaseSync) {
   const cols = db.prepare('PRAGMA table_info(artifacts)').all() as { name: string }[]
   if (!cols.some(c => c.name === 'workspace_id')) db.exec(`ALTER TABLE artifacts ADD COLUMN workspace_id TEXT NOT NULL DEFAULT '${DEFAULT_WORKSPACE_ID}'`)
   db.exec('CREATE INDEX IF NOT EXISTS artifacts_by_workspace ON artifacts(workspace_id, updated_at)')
+  ensureSharedFilesSchema(db)
 }
 
 const bad = (m: string, code = 400) => createError({ statusCode: code, statusMessage: m })
@@ -154,7 +155,7 @@ export function getWorkspaceOf(artifactId: string): { id: string, name: string }
   return useDb().prepare('SELECT w.id, w.name FROM artifacts a JOIN workspaces w ON w.id = a.workspace_id WHERE a.id = ?').get(artifactId) as { id: string, name: string } | undefined
 }
 
-// ---- settings (room for per-workspace design tokens and component library; not used yet) ----
+// ---- settings (small per-workspace JSON; shared files keep their own table, see sharedFiles.ts) ----
 
 export function getSettings(id: string): Record<string, unknown> {
   requireWorkspace(id)
