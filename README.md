@@ -34,9 +34,9 @@ and refuses to start if either variable is set. Never put them in a deployed env
 MCP endpoint: `POST /mcp` (streamable HTTP, stateless).
 Tools: `guide`, `list_artifacts`, `create_artifact`, `get_artifact`, `read_file`, `publish_files`,
 `edit_file`, `read_comments`, `wait_for_comments`, `reply_comment`, `resolve_comment`, `share_link`,
-`data_list`, `data_get`, `data_set`, `data_delete`, `render_artifact`, `list_workspaces`, `create_workspace`, `move_artifact`.
+`data_list`, `data_get`, `data_set`, `data_delete`, `render_artifact`, `list_workspaces`, `create_workspace`, `update_workspace`, `delete_workspace`, `move_artifact`.
 `create_artifact` and `list_artifacts` take an optional `workspace` (id or name). Workspace tools follow the grant's scopes
-like the rest (`list_workspaces` needs read; `create_workspace` and `move_artifact` need write, so commenters never get them).
+like the rest (`list_workspaces` needs read; `create_workspace`, `update_workspace`, `delete_workspace` (owner only) and `move_artifact` need write, so commenters never get them).
 
 ## Workspaces
 A workspace is a named container (name, description, colour, icon) that groups artifacts. Every artifact is in exactly one;

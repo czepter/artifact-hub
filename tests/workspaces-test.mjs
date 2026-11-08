@@ -67,6 +67,19 @@ ok('empty workspace can be deleted', (await api('DELETE', `/api/workspaces/${bra
 ok('deleted workspace is gone', !(await api('GET', '/api/workspaces')).body.some(w => w.id === brand.id))
 ok('artifacts survived the move', (await mcp('get_artifact', { id: landing })).workspace.id === 'default')
 
+// MCP update_workspace / delete_workspace
+const mw = (await mcp('create_workspace', { name: `Mcp ${tag}` }))
+const upd = await mcp('update_workspace', { workspace: `mcp ${tag}`, name: `Mcp2 ${tag}`, description: 'renamed', color: '#112233' })
+ok('MCP update_workspace by name', upd.id === mw.id && upd.name === `Mcp2 ${tag}` && upd.description === 'renamed' && upd.color === '#112233', JSON.stringify(upd))
+ok('MCP update_workspace keeps untouched fields', (await mcp('update_workspace', { workspace: mw.id, description: 'again' })).color === '#112233')
+ok('MCP update_workspace duplicate name is an error', !!(await mcp('update_workspace', { workspace: mw.id, name: other.name.toUpperCase() })).error)
+const held = await mcp('create_artifact', { title: `Held ${tag}`, files: page('h'), workspace: mw.id })
+ok('MCP delete_workspace refuses a non-empty one', /Move them/.test((await mcp('delete_workspace', { workspace: mw.id })).error ?? ''))
+await mcp('move_artifact', { id: held.id, workspace: 'default' })
+ok('MCP delete_workspace on an empty one', (await mcp('delete_workspace', { workspace: `Mcp2 ${tag}` })).ok === true && !(await mcp('list_workspaces')).some(w => w.id === mw.id))
+ok('MCP delete_workspace refuses default', !!(await mcp('delete_workspace', { workspace: 'default' })).error)
+await api('DELETE', `/api/artifacts/${held.id}`)
+
 // settings column (extension point) exists and round-trips through the util-free API shape
 ok('workspace payload does not leak internals', !('settings' in def))
 
