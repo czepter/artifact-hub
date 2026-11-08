@@ -144,17 +144,23 @@ export function publish(opts: {
   }
 }
 
-export function editFile(id: string, path: string, edits: { old_text: string, new_text: string }[], baseVersion: number, label?: string) {
-  const a = requireArtifact(id)
-  const file = readFile(id, a.current_version, cleanPath(path))
-  if (!file) throw createError({ statusCode: 404, statusMessage: `No such file: ${path}` })
-  let text = file.content.toString('utf8')
+export type TextEdit = { old_text: string, new_text: string }
+
+/** Applies edits in order; each old_text must occur exactly once or nothing is applied. */
+export function applyTextEdits(text: string, edits: TextEdit[]): string {
   for (const [i, e] of edits.entries()) {
     const n = text.split(e.old_text).length - 1
     if (n !== 1) throw createError({ statusCode: 422, statusMessage: `Edit ${i + 1}: old_text must occur exactly once, found ${n}. Nothing was published.` })
     text = text.replace(e.old_text, () => e.new_text)
   }
-  return publish({ id, files: [{ path, content: text }], baseVersion, label })
+  return text
+}
+
+export function editFile(id: string, path: string, edits: TextEdit[], baseVersion: number, label?: string) {
+  const a = requireArtifact(id)
+  const file = readFile(id, a.current_version, cleanPath(path))
+  if (!file) throw createError({ statusCode: 404, statusMessage: `No such file: ${path}` })
+  return publish({ id, files: [{ path, content: applyTextEdits(file.content.toString('utf8'), edits) }], baseVersion, label })
 }
 
 // ---- shares -------------------------------------------------------------------------------

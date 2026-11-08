@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { useDb } from './db'
 import { logEvent } from './events'
 import { emitArtifact } from './bus'
-import { cleanPath, contentTypeFor, getArtifact, listFiles, publish, readFile, requireArtifact, type ArtifactRow } from './store'
+import { applyTextEdits, cleanPath, contentTypeFor, getArtifact, listFiles, publish, readFile, requireArtifact, type ArtifactRow, type TextEdit } from './store'
 import { getSettings, patchSettings, requireWorkspace } from './workspaces'
 import { BOARD_PATH, emptyCanvas, type Canvas } from '../../shared/canvasOps'
 
@@ -166,6 +166,15 @@ export function putSharedFile(workspaceId: string, rawPath: unknown, content: Bu
     try { logEvent('shared file saved', `${requireWorkspace(workspaceId).name}: ${path}`) } catch { /* the log never blocks */ }
   }
   return listSharedFiles(workspaceId).find(f => f.path === path)!
+}
+
+/** In-place change of one text file: each old_text must occur exactly once, all edits apply or none. Goes through putSharedFile, so limits, canvas and live reload behave as for a full write. */
+export function editSharedFile(workspaceId: string, rawPath: unknown, edits: TextEdit[], by: string): SharedFile {
+  const path = cleanSharedPath(rawPath)
+  const cur = readSharedFile(workspaceId, path)
+  if (!cur) throw bad(`No such shared file: ${path}`, 404)
+  if (!/^(text\/|application\/json|image\/svg)/.test(cur.contentType)) throw bad(`${path} is not a text file`, 415)
+  return putSharedFile(workspaceId, path, Buffer.from(applyTextEdits(cur.content.toString('utf8'), edits), 'utf8'), by)
 }
 
 export function deleteSharedFile(workspaceId: string, rawPath: unknown) {

@@ -39,6 +39,18 @@ ok('read source', (await api('GET', `/api/workspaces/${w1.id}/files/css/tokens.c
 
 // reserved prefix and path safety
 ok('artifact cannot publish under _shared/', (await api('POST', '/api/artifacts', { title: 'x', files: [{ path: 'index.html', content: 'x' }, { path: '_shared/a.css', content: 'x' }] })).status === 400)
+// in-place edit: PATCH and MCP edit_shared_file
+const sfile = `/api/workspaces/${w1.id}/files/css/tokens.css`
+r = await api('PATCH', sfile, { edits: [{ old_text: '#c4281c', new_text: '#123456' }] })
+ok('PATCH edits in place', r.status === 200 && r.body.ref === '_shared/css/tokens.css', JSON.stringify(r.body))
+ok('edit is live', (await (await frame(a1.id, '_shared/css/tokens.css')).r.text()) === ':root{--brand:#123456}')
+r = await api('PATCH', sfile, { edits: [{ old_text: '#123456', new_text: '#abcdef' }, { old_text: 'nope', new_text: 'x' }] })
+ok('failed edit applies nothing', r.status === 422 && (await (await frame(a1.id, '_shared/css/tokens.css')).r.text()) === ':root{--brand:#123456}', JSON.stringify(r.body))
+ok('missing file 404', (await api('PATCH', `/api/workspaces/${w1.id}/files/css/none.css`, { edits: [{ old_text: 'a', new_text: 'b' }] })).status === 404)
+ok('bad body 400', (await api('PATCH', sfile, { edits: [] })).status === 400)
+let m = await mcp('edit_shared_file', { workspace: w1.id, path: 'css/tokens.css', edits: [{ old_text: '#123456', new_text: '#0a0b0c' }] })
+ok('MCP edit_shared_file', m.ok === true && (await (await frame(a2.id, '_shared/css/tokens.css')).r.text()).includes('#0a0b0c'), JSON.stringify(m))
+
 ok('traversal refused', (await api('PUT', `/api/workspaces/${w1.id}/files/..%2Fx.css`, { content: 'x' })).status === 400)
 ok('encoded traversal refused', (await api('PUT', `/api/workspaces/${w1.id}/files/css%2F..%2F..%2Fx.css`, { content: 'x' })).status === 400)
 ok('a name with a space round-trips', (await api('PUT', `/api/workspaces/${w1.id}/files/my%20font.css`, { content: 'a{}' })).body?.path === 'my font.css')
@@ -54,7 +66,7 @@ ok('missing source file is 404', (await api('POST', `/api/artifacts/${a1.id}/sha
 
 // MCP
 ok('MCP list_shared_files', (await mcp('list_shared_files', { workspace: `lib ${tag}` })).files.length === 2)
-ok('MCP read_shared_file', (await mcp('read_shared_file', { workspace: w1.id, path: '_shared/css/tokens.css' })).includes('#c4281c'))
+ok('MCP read_shared_file', (await mcp('read_shared_file', { workspace: w1.id, path: '_shared/css/tokens.css' })).includes('#0a0b0c'))
 const wr = await mcp('write_shared_files', { workspace: w1.id, files: [{ path: 'js/menu.js', content: 'console.log(1)' }], remove: ['css/promoted.css'] })
 ok('MCP write_shared_files writes and removes', wr.written[0] === '_shared/js/menu.js' && wr.removed[0] === '_shared/css/promoted.css', JSON.stringify(wr))
 ok('MCP read_file resolves _shared/', (await mcp('read_file', { id: a1.id, path: '_shared/js/menu.js' })).includes('console.log'))

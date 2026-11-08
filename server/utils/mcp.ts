@@ -8,7 +8,7 @@ import {
 import { onArtifact } from './bus'
 import { registerRenderTool } from './render/tool'
 import { requireOwner } from './auth'
-import { deleteSharedFile, sharedArtifactId, listSharedFiles, putSharedFile, readServedFile, readSharedFile, shareArtifactFiles, cleanSharedPath, sharedRev, SHARED_PREFIX } from './sharedFiles'
+import { deleteSharedFile, editSharedFile, sharedArtifactId, listSharedFiles, putSharedFile, readServedFile, readSharedFile, shareArtifactFiles, cleanSharedPath, sharedRev, SHARED_PREFIX } from './sharedFiles'
 import { transferBoards } from './transfer'
 import { createWorkspace, deleteWorkspace, getWorkspaceOf, listWorkspaces, moveArtifact, resolveWorkspaceId, updateWorkspace } from './workspaces'
 
@@ -44,12 +44,12 @@ Publish \`canvas.json\` plus one HTML file per board:
 Every workspace has a library of shared files that all of its artifacts and boards can use. A board links a library file as
 \`_shared/<path>\` relative to the artifact root: \`<link rel="stylesheet" href="_shared/tokens.css">\` (from a board in a subfolder
 use \`../_shared/tokens.css\`; inside \`_shared/css/a.css\` an \`@import\` of a sibling is relative too). It is a live link, not a copy: edit the file
-once with write_shared_files and every board that uses it changes (open viewers reload). Good candidates: design tokens as css custom properties,
+once with edit_shared_file (small change) or write_shared_files (full content) and every board that uses it changes (open viewers reload). Good candidates: design tokens as css custom properties,
 component styles (buttons, cards, nav), small scripts, fonts, logos.
 - The library is also a canvas (an artifact, \`artifact_id\` in list_shared_files): its HTML files are boards people can open at \`/a/<artifact_id>\`, comment on and edit.
   Use read_comments / reply_comment with that id to answer comments on a shared component.
 - list_shared_files / read_shared_file: see what exists before you write your own copy of a style.
-- write_shared_files: create, replace or remove library files. share_file: promote files you already published in an artifact into its workspace's library.
+- write_shared_files: create, replace or remove library files. edit_shared_file: change part of one text file in place (old_text/new_text, like edit_file). share_file: promote files you already published in an artifact into its workspace's library.
 - Rules: an artifact cannot publish its own files under \`_shared/\`; a library file lives in exactly one workspace, so moving an artifact to another workspace
   breaks its \`_shared/\` links unless that workspace has the same files. read_file on an artifact also reads \`_shared/…\` paths.
 - Prefer one tokens file (\`_shared/tokens.css\`) that other shared css builds on, so a re-theme is a one-file change.
@@ -107,7 +107,7 @@ const fileSchema = z.object({
 const TOOL_SCOPE: Record<string, string> = {
   guide: 'read', list_shared_files: 'read', read_shared_file: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', read_comment_attachment: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
   reply_comment: 'comment', resolve_comment: 'comment',
-  write_shared_files: 'write', transfer_boards: 'write', share_file: 'write', create_artifact: 'write', create_workspace: 'write', update_workspace: 'write', delete_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
+  write_shared_files: 'write', edit_shared_file: 'write', transfer_boards: 'write', share_file: 'write', create_artifact: 'write', create_workspace: 'write', update_workspace: 'write', delete_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
   share_link: 'share',
 }
 
@@ -205,6 +205,14 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     for (const p of remove ?? []) deleteSharedFile(ws, p)
     return text({ ok: true, written, removed: (remove ?? []).map(p => SHARED_PREFIX + cleanSharedPath(p)) })
   })
+
+  server.registerTool('edit_shared_file', {
+    description: 'Small in-place change to one shared text file (css, js, svg, html…): each old_text must occur exactly once; all edits apply or none. Prefer this over write_shared_files for tweaks, it needs no full content and cannot clobber the rest of the file.',
+    inputSchema: {
+      workspace: z.string().optional(), path: z.string(),
+      edits: z.array(z.object({ old_text: z.string().min(1), new_text: z.string() })).min(1).max(64),
+    },
+  }, ({ workspace, path, edits }) => text({ ok: true, file: editSharedFile(resolveWorkspaceId(workspace), path, edits, 'claude').ref }))
 
   server.registerTool('share_file', {
     description: 'Copy files of an artifact\'s live version into its workspace\'s shared files (`as` renames). The artifact keeps its own copy: edit the boards to link `_shared/<path>` instead.',
