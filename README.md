@@ -34,7 +34,57 @@ and refuses to start if either variable is set. Never put them in a deployed env
 MCP endpoint: `POST /mcp` (streamable HTTP, stateless).
 Tools: `guide`, `list_artifacts`, `create_artifact`, `get_artifact`, `read_file`, `publish_files`,
 `edit_file`, `read_comments`, `reply_comment`, `resolve_comment`, `share_link`,
-`data_list`, `data_get`, `data_set`, `data_delete`.
+`data_list`, `data_get`, `data_set`, `data_delete`, `render_artifact`.
+
+## Rendering (PNG, SVG, WebP, JPEG, XML)
+`GET /api/artifacts/:id/render?format=png` draws an artifact on the server. `:id` is an artifact id (signed-in member) or a share token
+(any role), the same access as `/api/view/:ref`. The viewer's **Export as image…** dialog and the MCP tool `render_artifact` (read scope;
+returns the image so a chat model can look at its own work) use it.
+
+| Query | Meaning |
+|---|---|
+| `format` | `png` (default), `svg`, `webp`, `jpeg`, `xml` |
+| `version` | Default: the live version. Old versions are immutable and cached for a day by the browser. |
+| `board` | A board path from `canvas.json`: only that board, exactly its size. Default: the whole canvas with 48 px around it (`padding`, 0 to 400). |
+| `scale` | 0.1 to 4 (default 1). |
+| `max` | Longest edge in px; lowers the scale to fit. Hard limits apply regardless: 8192 px per edge, 36 megapixels, scale 4. The response says what was used (`X-Render-Size`, `X-Render-Scale`). |
+| `background` | `canvas` (default, the theme's canvas colour), `white`, `transparent` (not for jpeg) or `#rrggbb`. |
+| `theme` | `light` (default) or `dark`: default ink, canvas and title colours. Boards stay white, like in the viewer. |
+| `width`, `height` | Page size for a single-page artifact (default 1280x800; the picture grows to the page's height, up to 8000). |
+| `quality` | 10 to 100 for webp and jpeg (default 85). |
+| `html` | `0` skips the headless browser and draws boards as text outlines. |
+| `download` | Any value: `Content-Disposition: attachment`. |
+
+**How it is drawn.** `shared/canvasRender.ts` turns `canvas.json` into SVG: stickies, text, rectangles, ovals (with hatch fills and labels), lines, arrows
+(bound arrows end on their targets), pen strokes, images, board frames and titles, laid out with the same geometry and style code as the viewer
+(`shared/canvasGeometry.ts`, `shared/canvasStyle.ts`). Text is wrapped with the real font's metrics (Liberation Sans, bundled in `server/assets/fonts`,
+SIL OFL). The SVG is true vector output; PNG, WebP and JPEG rasterize it with [resvg](https://github.com/yisibl/resvg-js) (prebuilt for linux amd64/arm64, no
+system libraries) and wasm encoders. The SVG has no scripts, no `foreignObject` and no external references; every string and number from `canvas.json`
+is escaped or validated, images are embedded only after their bytes check out as png/jpeg/gif/webp, and the response carries a sandbox CSP.
+
+**Board HTML.** Boards are real web pages, which a vector renderer cannot draw. If a Chromium is installed they are drawn by it and embedded as
+pictures; otherwise each board is a frame with the page's text (headings, paragraphs, buttons...) and the response header `X-Render-Boards: outline`
+(`screenshot` when drawn for real). The browser is found at `HUB_CHROMIUM`, `/usr/bin/chromium*`, Chrome, or a Playwright download in `~/.cache/ms-playwright`.
+Boards run in a fresh context with **no network** (only the artifact's own files are served to them). `HUB_CHROMIUM_NO_SANDBOX=1` adds `--no-sandbox`
+for containers that cannot start the sandbox; that lets page scripts run with less isolation, so enable it only if you trust the artifacts' authors.
+`HUB_RENDER_HTML=0` turns the browser off. The Docker image has none by default; build one with it: `docker build --build-arg WITH_CHROMIUM=1 .` (about +350 MB).
+`HUB_RENDER_SYSTEM_FONTS=1` also loads system fonts (for scripts the bundled font lacks, e.g. CJK, which otherwise render as boxes).
+
+**Cache and load.** Finished renders and board pictures are cached in memory (96 MB, keyed by artifact, version and options, with ETags); two renders run at once,
+twelve may wait, then 503.
+
+**XML** (`urn:artifact-hub:scene:1`) is the resolved scene for tools that read a canvas rather than look at it:
+```xml
+<scene xmlns="urn:artifact-hub:scene:1" version="1" artifact="…" artifactVersion="3" title="…" theme="light" background="#e6e6e6" x="-48" y="-218" width="1000" height="784">
+  <board path="screens/Home.html" title="Home" x="0" y="0" width="640" height="420" interactive="true" render="screenshot|outline">
+    <outline><line size="32" bold="true">Team lunch</line>…</outline>       <!-- only render="outline" -->
+  </board>
+  <note id="n1" kind="sticky" x="0" y="-170" width="260" height="96" fill="yellow" size="13"><text>Context for reviewers</text></note>
+  <note id="n5" kind="arrow" x="640" y="210" width="160" height="30" arrowEnd="arrow"><bind end="start" type="board" target="screens/Home.html"/>…</note>
+  <note id="n7" kind="pen" …><points><p x="0" y="0"/>…</points></note>
+</scene>
+```
+Boards come in the viewer's order, notes back to front. Geometry is what is drawn (bound arrows resolved, sticky and text heights measured), in canvas px; colours are `#rrggbb` or a named fill.
 
 ## Admin (owner)
 Under **Admin**: Overview (MCP endpoint, storage), Members (invite, roles, remove), Clients (every OAuth grant with its member, scopes,
@@ -99,7 +149,7 @@ resyncs whenever it reconnects. Behind a proxy, keep response buffering and comp
     but not retyped (use the Code tab). Undo reverts the last saved batch, or discards unsaved edits.
   - **Drag and drop:** blue line = before/after, dashed box = inside an empty container; Esc cancels; tables' rows never receive
     foreign children; on `.dc.html` boards a drop on the page lands inside `<x-dc>`.
-- **Artifact menu** (title, owner only): Share, Export `.zip`, Duplicate, Rename, Pin, Refresh, Delete.
+- **Artifact menu** (title, owner only): Share, Export as image…, Export `.zip`, Duplicate, Rename, Pin, Refresh, Delete.
 
 ## Design Component boards (`.dc.html`) and import
 - Boards written in Claude's Design format (`<x-dc>` templates, `{{holes}}`, `<sc-for>`, `<sc-if>`, `<dc-import>`, `DCLogic`)
