@@ -38,7 +38,7 @@ const used = (g: Grant) => (g.last_used ? `used ${agoS(g.last_used)}` : 'never u
 
 <template>
   <Board label="Connect a client">
-    <div class="grid md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+    <div class="grid grid-cols-[minmax(0,1fr)] md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
       <div class="min-w-0 p-4">
         <label for="mcp-endpoint" class="mb-2 block text-sm font-medium">MCP endpoint</label>
         <div class="flex gap-2">

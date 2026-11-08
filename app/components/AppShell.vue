@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 
 const props = defineProps<{ me: { name: string, email: string, role: string } | null }>()
 const route = useRoute()
+// Pages that are grids of work (dashboard, artifacts, comments) opt into the wide column with definePageMeta({ wide: true }).
+const wide = computed(() => !!route.meta.wide)
 const inAdmin = computed(() => route.path.startsWith('/admin'))
 const adminLinks = [{ to: '/admin', label: 'Overview' }, { to: '/admin/members', label: 'Members' }, { to: '/admin/clients', label: 'Clients' }, { to: '/admin/share-links', label: 'Share links' }, { to: '/admin/activity', label: 'Activity' }]
 const isActive = (to: string) => (to === '/admin' ? route.path === '/admin' : to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(to + '/'))
@@ -30,10 +32,10 @@ function returnFocus() {
 <template>
   <div class="hub-ground">
     <header class="pointer-events-none fixed inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-3">
-      <div class="grid min-w-0 justify-items-start gap-2">
-        <div class="float pointer-events-auto flex min-w-0 items-center gap-1 rounded-xl border bg-card p-1">
+      <div class="grid min-w-0 flex-1 justify-items-start gap-2">
+        <div class="float pointer-events-auto flex min-w-0 max-w-full items-center gap-1 overflow-x-auto rounded-xl border bg-card p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <span class="whitespace-nowrap px-2 text-sm font-semibold tracking-tight max-sm:hidden">Artifact Hub</span>
-          <nav aria-label="Main" class="flex items-center gap-0.5">
+          <nav aria-label="Main" class="flex shrink-0 items-center gap-0.5">
             <Button v-for="l in links" :key="l.to" as-child variant="ghost" size="sm" :class="(l.to === '/admin' ? inAdmin : isActive(l.to)) && 'bg-accent'">
               <NuxtLink :to="l.to" :aria-current="(l.to === '/admin' ? inAdmin : isActive(l.to)) ? 'page' : undefined">{{ l.label }}<Badge v-if="l.to === '/comments' && openThreads" class="ml-1 h-4 min-w-4 rounded-full px-1 text-[11px]">{{ openThreads }}</Badge></NuxtLink>
             </Button>
@@ -58,6 +60,6 @@ function returnFocus() {
       </div>
     </header>
     <CommandPaletteGlobal v-if="me" v-model:open="paletteOpen" :role="me.role" @return-focus="returnFocus" />
-    <main class="mx-auto w-full max-w-5xl px-4 pb-16" :class="inAdmin ? 'pt-32' : 'pt-20'"><slot /></main>
+    <main class="mx-auto w-full px-4 pb-16" :class="[inAdmin ? 'pt-32' : 'pt-20', wide ? 'max-w-[100rem] sm:px-6' : 'max-w-5xl']"><slot /></main>
   </div>
 </template>

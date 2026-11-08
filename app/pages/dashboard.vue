@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'shell', access: 'member' })
+definePageMeta({ layout: 'shell', access: 'member', wide: true })
 import { Check, Copy } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -80,7 +80,7 @@ useHead({ title: 'Dashboard · Artifact Hub' })
     </p>
   </div>
   <p v-if="failed" class="err px-1" role="alert">Could not load the dashboard. Reload to try again.</p>
-  <div v-else-if="dash" class="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
+  <div v-else-if="dash" class="grid min-w-0 grid-cols-[minmax(0,1fr)] items-start gap-6 xl:grid-cols-[minmax(26rem,5fr)_minmax(0,7fr)]">
     <Board v-if="firstRun" label="Publish your first artifact">
       <div class="grid md:grid-cols-2">
         <section class="grid min-w-0 content-start gap-2.5 p-4">
@@ -116,7 +116,7 @@ useHead({ title: 'Dashboard · Artifact Hub' })
     </Board>
     <Board v-if="!firstRun" label="Recent artifacts">
       <p v-if="!dash.recent.length" class="px-4 py-6 text-sm text-muted-foreground">No artifacts yet. Connect an MCP client and ask it to publish something.</p>
-      <ul v-else class="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3">
+      <ul v-else class="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-3 p-3">
         <li v-for="r in dash.recent" :key="r.id" class="min-w-0">
           <ArtifactCard :artifact="r" />
         </li>
