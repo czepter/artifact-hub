@@ -14,6 +14,7 @@ const SCOPES: Record<string, { label: string, hint: string }> = {
   write: { label: 'Publish and edit', hint: 'Create artifacts, publish versions, edit files, write shared data' },
   share: { label: 'Share', hint: 'Create share links' },
 }
+definePageMeta({ access: 'member' })
 const route = useRoute()
 const req = ref<Req | null>(null)
 const error = ref(typeof route.query.error === 'string' ? route.query.error : '')

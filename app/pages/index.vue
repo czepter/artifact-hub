@@ -1,23 +1,22 @@
 <script setup lang="ts">
 // Sign-in gate. Signed-in owners and members land on the dashboard.
 const route = useRoute()
-const { authed, load: loadOwner } = useOwner()
-const cfg = ref<{ setup: boolean, github: boolean } | null>(null)
+const { me, authed, ensure } = useOwner()
+// Rendered on the server: the visitor's cookie is forwarded, so a signed-in member is redirected before any HTML is sent
+// and a guest gets the sign-in card in the first response (no "Loading…" screen).
+const { data: cfg } = await useFetch<{ setup: boolean, github: boolean }>('/api/auth-config', { key: 'auth-config', default: () => ({ setup: false, github: false }) })
+await ensure()
+if (me.value) await enter(false)
 
-async function enter() {
+// After signing in a full load starts the session clean; an already-signed-in visitor just moves on.
+async function enter(external = true) {
   const n = route.query.next
-  if (typeof n === 'string' && n.startsWith('/') && !n.startsWith('//')) return navigateTo(n, { external: true })
-  return navigateTo('/dashboard', { external: true })
+  if (typeof n === 'string' && n.startsWith('/') && !n.startsWith('//')) return navigateTo(n, { external })
+  return navigateTo('/dashboard', { external })
 }
-onMounted(async () => {
-  cfg.value = await $fetch('/api/auth-config').catch(() => ({ setup: false, github: false }))
-  await loadOwner()
-  if (authed.value) await enter()
-})
 useHead({ title: 'Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="authed !== false || !cfg" class="hub-ground center" role="status"><span class="muted">Loading…</span></div>
-  <div v-else class="hub-ground center"><SignInCard :github="cfg.github" :setup="cfg.setup" @done="enter" /></div>
+  <div class="hub-ground center"><SignInCard v-if="authed === false && cfg" :github="cfg.github" :setup="cfg.setup" @done="enter()" /></div>
 </template>

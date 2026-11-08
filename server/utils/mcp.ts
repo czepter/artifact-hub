@@ -5,6 +5,9 @@ import {
   addComment, createShare, editFile, getArtifact, listArtifacts, listComments, listFiles, listVersions,
   publish, readFile, requireArtifact, resolveComment,
 } from './store'
+import { onArtifact } from './bus'
+import { registerRenderTool } from './render/tool'
+import { createWorkspace, getWorkspaceOf, listWorkspaces, moveArtifact, resolveWorkspaceId } from './workspaces'
 
 const GUIDE = `# Artifact Hub: how to publish
 
@@ -53,12 +56,15 @@ Optional canvas fields (all validated; omit them for the defaults):
 - arrow \`bind\`: {"start":{"type":"note","id":"n1"},"end":{"type":"board","id":"screens/Home.html"}} attaches an end to a note or board; the viewer draws the end at the target's edge and follows it when it moves. Only arrows can be bound, to boards, rect, oval, sticky and text; targets must exist. A rect or oval may carry \`text\` (shown centred).
 Limits: 1000 notes, 400 pen points per stroke, boards and notes at most 8000 px wide or high, 200 operations per edit.
 
+## Looking at your work
+render_artifact draws the live version (or \`version\`) as png/webp/jpeg (returned as an image), svg (vector, from canvas.json) or xml (structured scene). \`board\` renders one board. Use it after publishing to check layout; boards show as text outlines when the server has no headless browser (the \`boards\` field says which).
+
 ## Visual editor
 The owner can edit boards in the viewer (select, retype text, change styles, add elements). Saved edits add \`data-hub-id\` attributes to elements: they are editor bookkeeping, keep them when you rewrite a file (the editor re-adds missing ones).
 
 ## Comments
 People comment on the page; threads anchor to a board + element (CSS path + text fingerprint).
-Use read_comments to see open threads, reply_comment to answer, resolve_comment when handled.
+Use read_comments to see open threads, wait_for_comments (long-poll, loop it) to react to new ones as they arrive, reply_comment to answer, resolve_comment when handled.
 Comments belong to the version they were made on; the viewer re-locates them on newer versions.
 `
 
@@ -71,9 +77,9 @@ const fileSchema = z.object({
 })
 
 const TOOL_SCOPE: Record<string, string> = {
-  guide: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', data_list: 'read', data_get: 'read',
+  guide: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
   reply_comment: 'comment', resolve_comment: 'comment',
-  create_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
+  create_artifact: 'write', create_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
   share_link: 'share',
 }
 
@@ -89,14 +95,32 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
 
   server.registerTool('guide', { description: 'How to structure artifacts and canvases. Read before the first publish.' }, () => text(GUIDE))
 
-  server.registerTool('list_artifacts', { description: 'List artifacts, most recently updated first.' }, () =>
-    text(listArtifacts().map(a => ({ id: a.id, title: a.title, version: a.current_version, updated_at: a.updated_at, url: `${origin}/a/${a.id}` }))))
+  server.registerTool('list_workspaces', { description: 'List workspaces (groups of artifacts) with their artifact counts. Artifacts without a named workspace live in the default one.' }, () =>
+    text(listWorkspaces()))
+
+  server.registerTool('create_workspace', {
+    description: 'Create a workspace to group artifacts. Names are unique (case-insensitive).',
+    inputSchema: { name: z.string().min(1).max(60), description: z.string().max(500).optional(), color: z.string().optional().describe('#rrggbb') },
+  }, ({ name, description, color }) => text(createWorkspace({ name, description, color })))
+
+  server.registerTool('move_artifact', {
+    description: 'Move an artifact to another workspace (id or name).',
+    inputSchema: { id: z.string(), workspace: z.string() },
+  }, ({ id, workspace }) => { requireArtifact(id); const w = moveArtifact(id, workspace); return text({ ok: true, workspace: { id: w.id, name: w.name } }) })
+
+  server.registerTool('list_artifacts', {
+    description: 'List artifacts, most recently updated first. Pass workspace (id or name) to list one workspace.',
+    inputSchema: { workspace: z.string().optional() },
+  }, ({ workspace }) =>
+    text(listArtifacts(workspace ? resolveWorkspaceId(workspace) : undefined).map(a => ({
+      id: a.id, title: a.title, version: a.current_version, updated_at: a.updated_at, workspace_id: a.workspace_id, url: `${origin}/a/${a.id}`,
+    }))))
 
   server.registerTool('create_artifact', {
-    description: 'Create an artifact (private to the owner). Needs index.html or canvas.json.',
-    inputSchema: { title: z.string().min(1).max(200), files: z.array(fileSchema).min(1), label: z.string().max(60).optional() },
-  }, ({ title, files, label }) => {
-    const r = publish({ title, files, label })
+    description: 'Create an artifact (private to the owner). Needs index.html or canvas.json. Optional workspace (id or name; default workspace if omitted).',
+    inputSchema: { title: z.string().min(1).max(200), files: z.array(fileSchema).min(1), label: z.string().max(60).optional(), workspace: z.string().optional() },
+  }, ({ title, files, label, workspace }) => {
+    const r = publish({ title, files, label, workspaceId: workspace })
     return text({ ...r, url: `${origin}/a/${r.id}` })
   })
 
@@ -108,7 +132,7 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     const v = version ?? a.current_version
     const canvas = readFile(id, v, 'canvas.json')?.content.toString('utf8')
     return text({
-      id: a.id, title: a.title, live_version: a.current_version, version: v, url: `${origin}/a/${a.id}`,
+      id: a.id, title: a.title, workspace: getWorkspaceOf(a.id), live_version: a.current_version, version: v, url: `${origin}/a/${a.id}`,
       files: listFiles(id, v), versions: listVersions(id), canvas_json: canvas ?? null,
     })
   })
@@ -158,6 +182,30 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     })))
   })
 
+  server.registerTool('wait_for_comments', {
+    description: 'Long-poll: returns as soon as a person has commented on (or replied under) this artifact after `since`, or after timeout_s with an empty list. Pass `since` = the `next_since` of the previous call (omit on the first call to start from now). Call again in a loop to react to web comments; your own replies never wake it.',
+    inputSchema: { id: z.string(), since: z.string().optional(), timeout_s: z.number().int().min(1).max(50).default(25) },
+  }, async ({ id, since, timeout_s }, extra: { signal?: AbortSignal }) => {
+    requireArtifact(id)
+    const from = since ?? new Date().toISOString()
+    const fresh = () => listComments(id).filter(c => c.author_kind === 'person' && c.created_at > from)
+    const result = (list: ReturnType<typeof fresh>) => text({
+      comments: list.map(c => ({ id: c.id, thread_id: c.parent_id ?? c.id, board: c.board, anchor: c.anchor, author: c.author_email, body: c.body, created_at: c.created_at })),
+      next_since: list.length ? list[list.length - 1]!.created_at : from,
+    })
+    let hits = fresh()
+    if (hits.length) return result(hits)
+    await new Promise<void>((resolve) => {
+      let off = () => {}
+      const done = () => { clearTimeout(timer); off(); extra?.signal?.removeEventListener('abort', done); resolve() }
+      const timer = setTimeout(done, timeout_s * 1000)
+      off = onArtifact(id, (ev) => { if (ev.type === 'comments' && fresh().length) done() })
+      extra?.signal?.addEventListener('abort', done)
+    })
+    hits = fresh()
+    return result(hits)
+  })
+
   server.registerTool('reply_comment', {
     description: 'Reply to a comment thread (use the thread root id).',
     inputSchema: { id: z.string(), comment_id: z.string(), body: z.string().min(1).max(5000) },
@@ -204,6 +252,8 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     const token = createShare(id, role)
     return text({ url: `${origin}/s/${token}`, role })
   })
+
+  registerRenderTool(server)
 
   return server
 }

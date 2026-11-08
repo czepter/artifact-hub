@@ -47,6 +47,8 @@ jobs:
       - run: npm ci --ignore-scripts # unit tests need no nuxt prepare
       - name: Unit tests (canvas ops, geometry, html edit)
         run: npx --yes tsx@4 tests/e2e/canvas-unit.ts
+      - name: Unit tests (rendering: svg, xml, png, webp)
+        run: npx --yes tsx@4 tests/e2e/render-unit.ts
 
   build:
     if: github.event_name != 'push'

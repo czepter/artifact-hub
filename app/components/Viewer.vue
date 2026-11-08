@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X, ArrowLeft, Check, ChevronDown, Copy, Download, MessageSquare, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2 } from '@lucide/vue'
+import { X, ArrowLeft, Check, ChevronDown, Copy, Download, ImageIcon, MessageSquare, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -489,7 +489,10 @@ function onTarget(t: { board: string, anchor: Anchor }) {
 }
 
 async function post(path: string, body?: unknown) {
-  return $fetch(`/api/view/${props.refId}/${path}`, { method: 'POST', body })
+  const r = await $fetch(`/api/view/${props.refId}/${path}`, { method: 'POST', body })
+  // The signed-in lists and the nav badge cache comment counts: mark them stale (they revalidate on their next visit).
+  if (path.startsWith('comments')) void invalidate('comments', 'comment-count', 'dashboard', 'artifacts')
+  return r
 }
 
 async function submitDraft(body: string) {
@@ -617,11 +620,20 @@ async function commitRename() {
   renaming.value = false
   if (!t || t === data.value!.artifact.title) return
   await $fetch(`/api/artifacts/${data.value!.artifact.id}`, { method: 'PATCH', body: { title: t } })
+  void invalidate('artifacts', 'dashboard', 'comments')
   await load()
 }
 async function togglePin() {
   menuOpen.value = false
   await $fetch(`/api/artifacts/${data.value!.artifact.id}`, { method: 'PATCH', body: { pinned: !data.value!.artifact.pinned } })
+  void invalidate('artifacts', 'dashboard')
+  await load()
+}
+const { load: loadWorkspaces } = useWorkspaces()
+onMounted(loadWorkspaces)
+async function moveTo(workspaceId: string) {
+  menuOpen.value = false
+  await $fetch(`/api/artifacts/${data.value!.artifact.id}`, { method: 'PATCH', body: { workspaceId } })
   await load()
 }
 async function duplicate() {
@@ -634,13 +646,16 @@ function exportZip() {
   const v = pinnedVersion.value ? `?v=${pinnedVersion.value}` : ''
   window.location.href = `/api/artifacts/${data.value!.artifact.id}/export${v}`
 }
+// ---- image export (owner): the dialog lives in RenderDialog.vue ---------------------------------
+const renderOpen = ref(false)
+function openRender() { menuOpen.value = false; renderOpen.value = true }
 async function refresh() { menuOpen.value = false; await load() }
 const deleteOpen = ref(false)
 function askRemove() { menuOpen.value = false; deleteOpen.value = true }
 async function remove() {
   menuOpen.value = false
   await $fetch(`/api/artifacts/${data.value!.artifact.id}`, { method: 'DELETE' })
-  await navigateTo('/', { external: true })
+  await navigateTo('/', { external: true }) // a full load: every cached list starts clean
 }
 
 // ---- sharing (owner) ---------------------------------------------------------------------------
@@ -730,11 +745,13 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
           <DropdownMenuContent align="start" class="w-64">
             <DropdownMenuLabel class="text-xs font-normal text-muted-foreground">Owned by you<br>Updated {{ ago(data.artifact.updatedAt) }} · v{{ data.artifact.live }}</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem @select="openRender"><ImageIcon />Export as image…</DropdownMenuItem>
             <DropdownMenuItem @select="exportZip"><Download />Export as .zip</DropdownMenuItem>
             <DropdownMenuItem @select="duplicate"><Copy />Duplicate</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem @select="startRename"><Pencil />Rename</DropdownMenuItem>
             <DropdownMenuItem @select="togglePin"><Pin />{{ data.artifact.pinned ? 'Unpin' : 'Pin to top' }}</DropdownMenuItem>
+            <WorkspaceMoveMenu :current="data.artifact.workspaceId" @move="moveTo" />
             <DropdownMenuSeparator />
             <DropdownMenuItem @select="refresh"><RefreshCw />Refresh</DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -921,6 +938,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
     </aside>
   </div>
 
+  <RenderDialog v-if="data && renderOpen" v-model:open="renderOpen" :artifact-id="data.artifact.id" :version="data.artifact.version" :boards="Object.entries(data.canvas?.boards ?? {}).map(([path, b]: [string, any]) => ({ path, title: b?.title || path }))" />
   <AlertDialog v-if="data" v-model:open="deleteOpen">
     <AlertDialogContent>
       <AlertDialogHeader>

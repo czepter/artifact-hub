@@ -4,6 +4,10 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 
 <template>
   <TooltipProvider :delay-duration="300">
-    <NuxtPage />
+    <!-- The one accent (DESIGN.md: a single azure for state and the primary action) as a hairline at the top while a route loads. -->
+    <NuxtLoadingIndicator color="var(--brand)" :height="2" :throttle="150" />
+    <NuxtLayout>
+      <NuxtPage />
+    </NuxtLayout>
   </TooltipProvider>
 </template>

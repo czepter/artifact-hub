@@ -2,6 +2,7 @@ import { randomUUID, randomBytes } from 'node:crypto'
 import { logEvent } from './events'
 import { useDb, now } from './db'
 import { emitArtifact } from './bus'
+import { resolveWorkspaceId } from './workspaces'
 
 export const LIMITS = { fileBytes: 5 * 1024 * 1024, versionBytes: 20 * 1024 * 1024, files: 500 }
 
@@ -30,11 +31,15 @@ export function cleanPath(raw: string): string {
 export interface FileInput { path: string, content: string, encoding?: 'utf8' | 'base64' }
 
 export interface ArtifactRow {
-  id: string, title: string, current_version: number, pinned: number, created_at: string, updated_at: string, opened_at: string | null, opens: number
+  id: string, title: string, current_version: number, pinned: number, created_at: string, updated_at: string, opened_at: string | null, opens: number, workspace_id: string
 }
 
-export function listArtifacts(): ArtifactRow[] {
-  return useDb().prepare('SELECT * FROM artifacts ORDER BY pinned DESC, updated_at DESC').all() as unknown as ArtifactRow[]
+/** `workspaceId` (an id, see resolveWorkspaceId) limits the list to one workspace. */
+export function listArtifacts(workspaceId?: string): ArtifactRow[] {
+  const db = useDb()
+  return (workspaceId
+    ? db.prepare('SELECT * FROM artifacts WHERE workspace_id = ? ORDER BY pinned DESC, updated_at DESC').all(workspaceId)
+    : db.prepare('SELECT * FROM artifacts ORDER BY pinned DESC, updated_at DESC').all()) as unknown as ArtifactRow[]
 }
 
 export function getArtifact(id: string): ArtifactRow | undefined {
@@ -73,7 +78,7 @@ export function listVersions(id: string) {
  */
 export function publish(opts: {
   id?: string | null, title?: string, files?: FileInput[], remove?: string[],
-  baseVersion?: number, label?: string, replace?: boolean,
+  baseVersion?: number, label?: string, replace?: boolean, workspaceId?: string,
 }): { id: string, version: number } {
   const db = useDb()
   const files = opts.files ?? []
@@ -100,7 +105,7 @@ export function publish(opts: {
     } else {
       if (!opts.title) throw createError({ statusCode: 400, statusMessage: 'title is required when creating' })
       id = randomUUID()
-      db.prepare('INSERT INTO artifacts (id, title, current_version, created_at, updated_at) VALUES (?, ?, 0, ?, ?)').run(id, opts.title, t, t)
+      db.prepare('INSERT INTO artifacts (id, title, current_version, created_at, updated_at, workspace_id) VALUES (?, ?, 0, ?, ?, ?)').run(id, opts.title, t, t, resolveWorkspaceId(opts.workspaceId))
     }
     const next = prev + 1
     db.prepare('INSERT INTO versions (artifact_id, version, label, created_at) VALUES (?, ?, ?, ?)').run(id, next, opts.label ?? null, t)
@@ -294,7 +299,7 @@ export function duplicateArtifact(id: string) {
     const file = readFile(id, a.current_version, f.path)!
     return { path: f.path, content: file.content.toString('base64'), encoding: 'base64' as const }
   })
-  return publish({ title: `${a.title} (copy)`, files, label: `Copy of ${a.title}`.slice(0, 60) })
+  return publish({ title: `${a.title} (copy)`, files, label: `Copy of ${a.title}`.slice(0, 60), workspaceId: a.workspace_id })
 }
 
 export function exportFiles(id: string, version?: number) {

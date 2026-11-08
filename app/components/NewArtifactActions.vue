@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
+const props = defineProps<{ workspace?: string }>()
 const fileInput = ref<{ $el: HTMLInputElement }>()
 const busy = ref(false)
 const msg = ref('')
@@ -16,7 +17,7 @@ async function newCanvas() {
   try {
     const canvas = { v: 1, title: 'Untitled canvas', boards: {}, order: [], notes: {} }
     const r = await $fetch<{ id: string }>('/api/artifacts', {
-      method: 'POST', body: { title: 'Untitled canvas', files: [{ path: 'canvas.json', content: JSON.stringify(canvas, null, 2) }], label: 'New canvas' },
+      method: 'POST', body: { title: 'Untitled canvas', files: [{ path: 'canvas.json', content: JSON.stringify(canvas, null, 2) }], label: 'New canvas', workspaceId: props.workspace },
     })
     await navigateTo(`/a/${r.id}`, { external: true })
   } catch (e) { msg.value = errOf(e, 'Could not create the canvas') } finally { busy.value = false }
@@ -31,7 +32,7 @@ async function importZip(e: Event) {
   try {
     const r = await $fetch<{ url: string }>('/api/artifacts/import', {
       method: 'POST', body: file, headers: { 'content-type': 'application/zip' },
-      query: { title: file.name.replace(/\.zip$/i, '') },
+      query: { title: file.name.replace(/\.zip$/i, ''), workspace: props.workspace },
     })
     await navigateTo(r.url, { external: true })
   } catch (err) { msg.value = errOf(err, 'Import failed') } finally { busy.value = false }
