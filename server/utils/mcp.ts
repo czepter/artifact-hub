@@ -7,7 +7,8 @@ import {
 } from './store'
 import { onArtifact } from './bus'
 import { registerRenderTool } from './render/tool'
-import { createWorkspace, getWorkspaceOf, listWorkspaces, moveArtifact, resolveWorkspaceId } from './workspaces'
+import { requireOwner } from './auth'
+import { createWorkspace, deleteWorkspace, getWorkspaceOf, listWorkspaces, moveArtifact, resolveWorkspaceId, updateWorkspace } from './workspaces'
 
 const GUIDE = `# Artifact Hub: how to publish
 
@@ -84,7 +85,7 @@ const fileSchema = z.object({
 const TOOL_SCOPE: Record<string, string> = {
   guide: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', read_comment_attachment: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
   reply_comment: 'comment', resolve_comment: 'comment',
-  create_artifact: 'write', create_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
+  create_artifact: 'write', create_workspace: 'write', update_workspace: 'write', delete_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
   share_link: 'share',
 }
 
@@ -107,6 +108,19 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     description: 'Create a workspace to group artifacts. Names are unique (case-insensitive).',
     inputSchema: { name: z.string().min(1).max(60), description: z.string().max(500).optional(), color: z.string().optional().describe('#rrggbb') },
   }, ({ name, description, color }) => text(createWorkspace({ name, description, color })))
+
+  server.registerTool('update_workspace', {
+    description: 'Change a workspace (id or name): rename it, or set description, color (#rrggbb) or icon. Only the fields you pass change.',
+    inputSchema: {
+      workspace: z.string(), name: z.string().min(1).max(60).optional(), description: z.string().max(500).optional(),
+      color: z.string().optional().describe('#rrggbb'), icon: z.string().optional(),
+    },
+  }, ({ workspace, ...fields }) => text(updateWorkspace(resolveWorkspaceId(workspace), fields)))
+
+  server.registerTool('delete_workspace', {
+    description: 'Delete an empty workspace (id or name; owner only). Refused while it holds artifacts (move_artifact them first) and for the default workspace.',
+    inputSchema: { workspace: z.string() },
+  }, ({ workspace }) => { requireOwner(useEvent()); deleteWorkspace(resolveWorkspaceId(workspace)); return text({ ok: true }) })
 
   server.registerTool('move_artifact', {
     description: 'Move an artifact to another workspace (id or name).',
