@@ -105,7 +105,7 @@ is escaped or validated, images are embedded only after their bytes check out as
 **Board HTML.** Boards are real web pages, which a vector renderer cannot draw. If a Chromium is installed they are drawn by it and embedded as
 pictures; otherwise each board is a frame with the page's text (headings, paragraphs, buttons...) and the response header `X-Render-Boards: outline`
 (`screenshot` when drawn for real). The browser is found at `HUB_CHROMIUM`, `/usr/bin/chromium*`, Chrome, or a Playwright download in `~/.cache/ms-playwright`.
-Boards run in a fresh context with **no network** (only the artifact's own files are served to them). `HUB_CHROMIUM_NO_SANDBOX=1` adds `--no-sandbox`
+Boards run in a fresh context with **no network** (requests, WebSockets and WebRTC are blocked; only the artifact's own files are served to them) and a time limit per board. `HUB_CHROMIUM_NO_SANDBOX=1` adds `--no-sandbox`
 for containers that cannot start the sandbox; that lets page scripts run with less isolation, so enable it only if you trust the artifacts' authors.
 `HUB_RENDER_HTML=0` turns the browser off. The published image includes one; a plain `docker build .` has none, add it with `--build-arg WITH_CHROMIUM=1` (about +350 MB). The zoomed-out canvas uses it too: without a browser, boards load as live pages at every zoom.
 `HUB_RENDER_SYSTEM_FONTS=1` also loads system fonts (for scripts the bundled font lacks, e.g. CJK, which otherwise render as boxes).

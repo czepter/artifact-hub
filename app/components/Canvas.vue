@@ -232,6 +232,8 @@ const closeEnough = ref(false)
 watch(k, v => (closeEnough.value = v >= (closeEnough.value ? 0.24 : 0.3)), { immediate: true })
 /** Boards this server could not draw (no headless browser): they stay live pages. */
 const noThumb = reactive<Record<string, true>>({})
+/** A miss may be transient (busy, an older version mid-publish): retry when the data changes. */
+watch(() => props.data.thumbBase, () => { for (const p of Object.keys(noThumb)) delete noThumb[p] })
 /** Live boards whose page has loaded; until then the picture stays in view. */
 const frameLoaded = reactive<Record<string, true>>({})
 /** The screen plus half a screen around it, in world space. */
