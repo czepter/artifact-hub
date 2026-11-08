@@ -16,6 +16,8 @@ const props = defineProps<{
   number?: number
   versionNote?: string
   detached?: boolean
+  /** The board this is on, named in the composer (empty for a single page). */
+  boardName?: string
   canComment: boolean
   needsEmail: boolean
   busy: boolean
@@ -122,7 +124,7 @@ function send() {
         v-model="body"
         class="min-h-16 resize-y"
         rows="3"
-        :placeholder="mode === 'draft' ? 'Write a comment, or paste an image…' : 'Reply, or paste an image…'"
+        :placeholder="mode === 'draft' ? (boardName ? `Comment on ${boardName}, or paste an image…` : 'Write a comment, or paste an image…') : (boardName ? `Reply on ${boardName}, or paste an image…` : 'Reply, or paste an image…')"
         @paste="onPaste"
         @keydown.meta.enter.prevent="send"
         @keydown.ctrl.enter.prevent="send"

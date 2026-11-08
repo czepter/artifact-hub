@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { Archive, ArchiveRestore, X, ArrowLeft, Check, ChevronDown, Copy, Download, ImageIcon, MessageSquare, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2, Library, ArrowRightLeft } from '@lucide/vue'
+import { Archive, ArchiveRestore, X, ArrowLeft, ChevronDown, Copy, Download, ImageIcon, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2, Library, ArrowRightLeft } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -17,6 +16,7 @@ import type { TreeNode } from './LayerTree.vue'
 
 import { TOOL_KEYS, TOOL_LABELS, TOOL_ORDER, type Tool } from '~/utils/canvasTools'
 import type { PaletteCommand } from '~/components/CanvasCommandPalette.vue'
+import type { ViewerMode } from '~/components/ReviewModeSwitch.vue'
 
 const props = defineProps<{ refId: string }>()
 
@@ -87,6 +87,7 @@ const paletteCommands = computed<PaletteCommand[]>(() => {
   if (editMode.value && canvas) list.push({ id: 'zsel', group: 'View', label: 'Zoom to selection', shortcut: 'Shift 2', run: () => c?.zoomToSelection() })
   if (editMode.value && canvas) list.push({ id: 'addboard', group: 'Canvas', label: 'Add a board', run: () => addBoardAtEnd() }, { id: 'undo', group: 'Canvas', label: 'Undo', shortcut: 'Ctrl Z', run: () => void undo() })
   list.push({ id: 'present', group: 'Canvas', label: 'Present', run: () => void present() })
+  for (const [m, label] of [['view', 'View'], ['edit', 'Edit'], ['review', 'Review']] as const) if (m !== mode.value && modeAllowed(m)) list.push({ id: 'mode-' + m, group: 'Mode', label: `Switch to ${label}`, run: () => void setMode(m) })
   list.push({ id: 'comments', group: 'Panels', label: sidebarOpen.value ? 'Hide comments' : 'Show comments', run: () => (sidebarOpen.value = !sidebarOpen.value) })
   if (editMode.value) for (const [id, label] of [['props', 'Properties'], ['code', 'Code'], ['tweaks', 'Tweaks']] as const) list.push({ id: 'tab-' + id, group: 'Panels', label: `${label} panel`, run: () => (panelTab.value = id) })
   return list
@@ -477,15 +478,67 @@ function rpc(req: { op: string, scope: string, key?: unknown, value?: unknown, p
 // ---- comments ----------------------------------------------------------------------------------
 const roots = computed(() => (data.value?.comments ?? []).filter(c => !c.parent_id))
 const openCount = computed(() => roots.value.filter(r => !r.resolved).length)
-const visibleRoots = computed(() => roots.value.filter(c => showResolved.value || !c.resolved))
 const repliesOf = (id: string) => (data.value?.comments ?? []).filter(c => c.parent_id === id)
 const canComment = computed(() => !!data.value && data.value.role !== 'view')
 const needsEmail = computed(() => !!data.value && data.value.role === 'comment' && !data.value.email)
 const isLive = computed(() => !!data.value && data.value.artifact.version === data.value.artifact.live)
 const selected = computed(() => roots.value.find(c => c.id === selectedId.value))
 
+// ---- modes: View, Edit, Review ------------------------------------------------------------------
+// Review is comment mode with the comments panel open; leaving it puts the panel back the way it was.
+const mode = computed<ViewerMode>(() => (editMode.value ? 'edit' : commentMode.value ? 'review' : 'view'))
+const canReview = computed(() => canComment.value || needsEmail.value)
+const editBlocked = computed(() => !isLive.value || presenting.value)
+function modeAllowed(m: ViewerMode) { return m === 'view' || (m === 'edit' ? isOwner.value && !editBlocked.value : canReview.value) }
+let panelBeforeReview: boolean | null = null
+watch(commentMode, (on) => {
+  if (on) { panelBeforeReview = sidebarOpen.value; sidebarOpen.value = true }
+  else if (panelBeforeReview !== null) { sidebarOpen.value = panelBeforeReview; panelBeforeReview = null }
+})
+async function setMode(m: ViewerMode) {
+  if (m === mode.value || !modeAllowed(m)) return
+  if (m === 'edit') return toggleEdit() // turns comment mode off itself
+  if (editMode.value) await stopEdit()
+  if (m === 'review') { commentMode.value = true; return }
+  commentMode.value = false
+  closePopover()
+}
+
+// ---- board scoping: which board "This board" and a new panel comment refer to -------------------
+const boardTitles = computed<Record<string, string>>(() => (hasBoards.value ? Object.fromEntries(Object.entries(effectiveCanvas.value?.boards ?? {}).map(([p, b]: [string, any]) => [p, b?.title || p])) : {}))
+const threadScope = ref<'all' | 'board'>('all')
+const scoped = computed(() => Object.keys(boardTitles.value).length > 1)
+/** The board last pointed at: picked on the canvas, commented on, or the board of the thread opened last. */
+const lastBoard = ref<string | null>(null)
+watch(() => canvasRef.value?.selectedBoardPath, (p) => { if (p) lastBoard.value = p })
+const reviewBoard = computed(() => {
+  const c = canvasRef.value
+  if (!hasBoards.value) return c?.firstBoard ?? null
+  const p = c?.focusBoard ?? draft.value?.board ?? lastBoard.value
+  return p && p in boardTitles.value ? p : c?.firstBoard ?? null
+})
+/** Open threads per board, for the count next to each board title on the canvas. */
+const openByBoard = computed(() => {
+  const m: Record<string, number> = {}
+  for (const r of roots.value) if (!r.resolved && r.board) m[r.board] = (m[r.board] ?? 0) + 1
+  return m
+})
+provide('openThreadsByBoard', openByBoard)
+
+/** A comment from the panel's composer: on the active board as a whole, not on one element. */
+async function commentOnBoard(body: string) {
+  busy.value = true
+  formError.value = ''
+  try {
+    const board = reviewBoard.value
+    await post('comments', { body, ...(board ? { board } : {}), version: data.value!.artifact.version })
+    await load()
+  } catch (e: any) { formError.value = e?.statusMessage ?? 'Could not post' } finally { busy.value = false }
+}
+
 function onTarget(t: { board: string, anchor: Anchor }) {
   draft.value = t
+  lastBoard.value = t.board
   selectedId.value = null
   formError.value = ''
 }
@@ -536,6 +589,8 @@ async function saveEmail(email: string) {
 function select(id: string) {
   const same = selectedId.value === id
   selectedId.value = same ? null : id
+  const b = roots.value.find(c => c.id === id)?.board
+  if (!same && b) lastBoard.value = b
   draft.value = null
   formError.value = ''
   const p = canvasRef.value?.pins[id]
@@ -794,13 +849,11 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         <span v-if="!isLive" class="hide-sm text-xs text-muted-foreground">Viewing an older version</span>
       </div>
       <div class="pill">
-        <Button v-if="isOwner" :variant="editMode ? 'default' : 'ghost'" size="sm" :aria-pressed="editMode" :disabled="!isLive || presenting" :title="isLive ? 'Edit this board visually' : 'Switch to the live version to edit'" @click="toggleEdit">
-          <Check v-if="editMode" /><Pencil v-else />{{ editMode ? 'Done' : 'Edit' }}
-        </Button>
+        <ReviewModeSwitch
+          :mode="mode" :can-edit="isOwner" :edit-disabled="editBlocked" :can-review="canReview"
+          :edit-title="isLive ? 'Edit this board visually' : 'Switch to the live version to edit'" @update:mode="setMode"
+        />
         <IconBtn label="Present" :disabled="editMode" @click="present"><Play /></IconBtn>
-        <IconBtn v-if="canComment || needsEmail" :label="commentMode ? 'Done commenting' : 'Comment'" :active="commentMode" :disabled="editMode" @click="commentMode = !commentMode; if (!commentMode) closePopover()">
-          <MessageSquare />
-        </IconBtn>
         <Popover v-if="isOwner" :open="shareOpen" @update:open="(o: boolean) => { shareOpen = o; if (o) loadShares() }">
           <Tooltip><TooltipTrigger as-child><PopoverTrigger as-child><Button variant="ghost" size="icon-sm" aria-label="Share"><Share2 /></Button></PopoverTrigger></TooltipTrigger><TooltipContent side="bottom">Share</TooltipContent></Tooltip>
           <PopoverContent align="end" class="w-[360px] max-w-[90vw] space-y-3">
@@ -820,7 +873,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
             </ul>
           </PopoverContent>
         </Popover>
-        <IconBtn :label="`Comments (${openCount} open)`" :active="sidebarOpen" @click="sidebarOpen = !sidebarOpen">
+        <IconBtn v-if="!sidebarOpen && !editMode" :label="`Comments (${openCount} open)`" :active="false" @click="sidebarOpen = true">
           <PanelRight />
           <Badge v-if="openCount" class="absolute -right-1 -top-1 h-[18px] min-w-[18px] justify-center rounded-full px-1 text-[11px] tabular-nums">{{ openCount }}</Badge>
         </IconBtn>
@@ -879,6 +932,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         :mode="draft ? 'draft' : 'thread'"
         :target="draft ? { tag: draft.anchor.tag, text: draft.anchor.text } : undefined"
         :thread="selected"
+        :board-name="boardTitles[(draft ? draft.board : selected?.board) ?? ''] ?? ''"
         :replies="selected ? repliesOf(selected.id) : []"
         :number="selected ? roots.indexOf(selected) + 1 : undefined"
         :version-note="selected && selected.version !== data.artifact.version ? `v${selected.version}` : ''"
@@ -937,30 +991,31 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         @code-apply="applyCode"
         @export-board="exportBoard"
       />
-      <label v-if="!editMode" class="flex items-center gap-2 px-1 pb-1 text-sm text-muted-foreground"><Checkbox v-model="showResolved" /> Show resolved</label>
-      <p v-if="!editMode && !visibleRoots.length" class="muted empty">
-        {{ canComment ? 'No comments yet. Turn on Comment, then click anything on the page.' : 'No comments yet.' }}
-      </p>
-      <Button
-        v-for="c in (editMode ? [] : visibleRoots)"
-        :key="c.id"
-        variant="ghost"
-        class="item h-auto whitespace-normal"
-        :class="{ selected: selectedId === c.id, resolved: c.resolved, detached: !!c.anchor && located[c.id] === false }"
-        @click="select(c.id)"
-      >
-        <span class="num">{{ roots.indexOf(c) + 1 }}</span>
-        <span class="txt">
-          <span class="line1"><strong>{{ c.author_kind === 'model' ? 'Claude' : c.author_email }}</strong> <span class="muted">{{ ago(c.created_at) }}</span></span>
-          <span class="snip">{{ c.body || (c.attachments?.length ? '📎 ' + c.attachments.map(a => a.name).join(', ') : '') }}</span>
-          <span v-if="repliesOf(c.id).length || c.resolved || (c.anchor && located[c.id] === false) || c.version !== data.artifact.version" class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            <span v-if="repliesOf(c.id).length">{{ repliesOf(c.id).length }} {{ repliesOf(c.id).length === 1 ? 'reply' : 'replies' }}</span>
-            <Badge v-if="c.resolved" variant="secondary">resolved</Badge>
-            <Badge v-if="c.anchor && located[c.id] === false" variant="destructive">detached</Badge>
-            <Badge v-if="c.version !== data.artifact.version" variant="outline">v{{ c.version }}</Badge>
-          </span>
-        </span>
-      </Button>
+      <ReviewPanel
+        v-else
+        v-model:show-resolved="showResolved"
+        v-model:scope="threadScope"
+        :roots="roots"
+        :replies-of="repliesOf"
+        :selected-id="selectedId"
+        :located="located"
+        :version="data.artifact.version"
+        :reviewing="mode === 'review'"
+        :board-titles="boardTitles"
+        :active-board="reviewBoard"
+        :scoped="scoped"
+        :composer="mode === 'review' && !draft && canReview"
+        :can-comment="canComment"
+        :needs-email="needsEmail"
+        :busy="busy"
+        :error="draft ? '' : formError"
+        @select="select"
+        @hide="sidebarOpen = false"
+        @comment="commentOnBoard"
+        @reply="reply"
+        @resolve="toggleResolve"
+        @save-email="saveEmail"
+      />
     </aside>
   </div>
 
@@ -1012,18 +1067,6 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
 .hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 6px 12px; border-radius: 999px; font-size: 13px; pointer-events: none; }
 .popover { position: absolute; z-index: 15; max-height: calc(100% - 16px); }
 .side { grid-column: 2; grid-row: 1; margin: 10px 10px 10px 0; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 4px 18px rgb(0 0 0 / .14); background: var(--panel); overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
-.empty { margin: 8px 4px; }
-.item { display: flex; justify-content: flex-start; gap: 10px; align-items: flex-start; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 10px; padding: 8px; cursor: pointer; width: 100%; }
-.item:hover { background: var(--hover); }
-.item.selected { border-color: var(--brand); background: var(--bg); }
-.item.resolved .snip { color: var(--muted-foreground); }
-.item.resolved .num { background: var(--muted); color: var(--muted-foreground); }
-.item.detached .num { background: var(--destructive); color: #fff; }
-.item.detached { border-style: dashed; border-color: var(--border); }
-.num { background: var(--primary); color: var(--primary-foreground); border-radius: 999px; min-width: 22px; height: 22px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; font-variant-numeric: tabular-nums; }
-.txt { display: grid; gap: 2px; min-width: 0; font-size: 13px; }
-.line1 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.snip { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .small { font-size: 12px; }
 @media (max-width: 800px) {
   .shell, .shell.closed { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
