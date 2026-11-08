@@ -20,7 +20,7 @@ export default defineEventHandler((event) => {
   // Frame URL base: share links reuse their own token, the owner gets a signed short-lived one.
   const ref = access.shareToken ?? signFrameToken(artifact.id)
   return {
-    artifact: { id: artifact.id, title: artifact.title, version, live: artifact.current_version, updatedAt: artifact.updated_at, pinned: !!artifact.pinned, workspaceId: artifact.workspace_id },
+    artifact: { id: artifact.id, title: artifact.title, version, live: artifact.current_version, updatedAt: artifact.updated_at, pinned: !!artifact.pinned, workspaceId: artifact.workspace_id, kind: artifact.kind, archived: !!artifact.archived_at },
     versions: listVersions(artifact.id),
     role: access.role,
     email: access.email,

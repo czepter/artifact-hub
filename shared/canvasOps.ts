@@ -53,7 +53,7 @@ const clamp = (n: unknown, lo: number, hi: number, name: string) => {
   if (typeof n !== 'number' || !Number.isFinite(n)) throw new CanvasError(400, `${name} must be a number`)
   return Math.round(Math.min(hi, Math.max(lo, n)) * 100) / 100
 }
-const BOARD_PATH = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}(\/[A-Za-z0-9][A-Za-z0-9_.-]{0,80}){0,3}\.html?$/
+export const BOARD_PATH = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}(\/[A-Za-z0-9][A-Za-z0-9_.-]{0,80}){0,3}\.html?$/
 
 export function emptyCanvas(title = 'Canvas'): Canvas {
   return { v: 3, title, launch: { view: 'canvas' }, pages: [], boards: {}, order: [], notes: {}, designSystems: [] }

@@ -8,7 +8,7 @@ import {
 import { onArtifact } from './bus'
 import { registerRenderTool } from './render/tool'
 import { requireOwner } from './auth'
-import { deleteSharedFile, listSharedFiles, putSharedFile, readServedFile, readSharedFile, shareArtifactFiles, cleanSharedPath, sharedRev, SHARED_PREFIX } from './sharedFiles'
+import { deleteSharedFile, sharedArtifactId, listSharedFiles, putSharedFile, readServedFile, readSharedFile, shareArtifactFiles, cleanSharedPath, sharedRev, SHARED_PREFIX } from './sharedFiles'
 import { transferBoards } from './transfer'
 import { createWorkspace, deleteWorkspace, getWorkspaceOf, listWorkspaces, moveArtifact, resolveWorkspaceId, updateWorkspace } from './workspaces'
 
@@ -46,6 +46,8 @@ Every workspace has a library of shared files that all of its artifacts and boar
 use \`../_shared/tokens.css\`; inside \`_shared/css/a.css\` an \`@import\` of a sibling is relative too). It is a live link, not a copy: edit the file
 once with write_shared_files and every board that uses it changes (open viewers reload). Good candidates: design tokens as css custom properties,
 component styles (buttons, cards, nav), small scripts, fonts, logos.
+- The library is also a canvas (an artifact, \`artifact_id\` in list_shared_files): its HTML files are boards people can open at \`/a/<artifact_id>\`, comment on and edit.
+  Use read_comments / reply_comment with that id to answer comments on a shared component.
 - list_shared_files / read_shared_file: see what exists before you write your own copy of a style.
 - write_shared_files: create, replace or remove library files. share_file: promote files you already published in an artifact into its workspace's library.
 - Rules: an artifact cannot publish its own files under \`_shared/\`; a library file lives in exactly one workspace, so moving an artifact to another workspace
@@ -148,10 +150,10 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
   }, ({ id, workspace }) => { requireArtifact(id); const w = moveArtifact(id, workspace); return text({ ok: true, workspace: { id: w.id, name: w.name } }) })
 
   server.registerTool('list_artifacts', {
-    description: 'List artifacts, most recently updated first. Pass workspace (id or name) to list one workspace.',
-    inputSchema: { workspace: z.string().optional() },
-  }, ({ workspace }) =>
-    text(listArtifacts(workspace ? resolveWorkspaceId(workspace) : undefined).map(a => ({
+    description: 'List artifacts, most recently updated first. Pass workspace (id or name) to list one workspace. Archived artifacts are hidden unless archived is true (then only those are listed).',
+    inputSchema: { workspace: z.string().optional(), archived: z.boolean().optional() },
+  }, ({ workspace, archived }) =>
+    text(listArtifacts(workspace ? resolveWorkspaceId(workspace) : undefined, false, archived ? 'only' : 'hide').map(a => ({
       id: a.id, title: a.title, version: a.current_version, updated_at: a.updated_at, workspace_id: a.workspace_id, url: `${origin}/a/${a.id}`,
     }))))
 
@@ -181,7 +183,7 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     inputSchema: { workspace: z.string().optional() },
   }, ({ workspace }) => {
     const ws = resolveWorkspaceId(workspace)
-    return text({ workspace_id: ws, rev: sharedRev(ws), files: listSharedFiles(ws).map(f => ({ ref: f.ref, path: f.path, size: f.size, content_type: f.contentType, updated_at: f.updatedAt, updated_by: f.updatedBy })) })
+    return text({ workspace_id: ws, artifact_id: sharedArtifactId(ws), url: sharedArtifactId(ws) ? `${origin}/a/${sharedArtifactId(ws)}` : null, rev: sharedRev(ws), files: listSharedFiles(ws).map(f => ({ ref: f.ref, path: f.path, size: f.size, content_type: f.contentType, updated_at: f.updatedAt, updated_by: f.updatedBy })) })
   })
 
   server.registerTool('read_shared_file', {

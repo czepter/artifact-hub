@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X, ArrowLeft, Check, ChevronDown, Copy, Download, ImageIcon, MessageSquare, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2, Library, ArrowRightLeft } from '@lucide/vue'
+import { Archive, ArchiveRestore, X, ArrowLeft, Check, ChevronDown, Copy, Download, ImageIcon, MessageSquare, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2, Library, ArrowRightLeft } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -124,6 +124,8 @@ const elementLevel = computed(() => editMode.value && (!hasBoards.value || !!can
 const activeBoard = computed(() => sel.value?.board ?? (canvasSel.value.length === 1 && canvasSel.value[0]!.type === 'board' ? canvasSel.value[0]!.id : null) ?? canvasRef.value?.focusBoard ?? canvasRef.value?.selectedBoardPath ?? canvasRef.value?.firstBoard ?? null)
 const activeTree = computed(() => (activeBoard.value ? layerTree[activeBoard.value] ?? null : null))
 const activeTweaks = computed(() => (activeBoard.value ? tweaksByBoard[activeBoard.value] ?? null : null))
+/** The workspace's shared-files library: a canvas like any other, but it cannot be renamed, moved, duplicated or deleted. */
+const isLibrary = computed(() => data.value?.artifact.kind === 'shared')
 const textFiles = computed(() => (data.value?.files ?? []).map(f => f.path))
 
 async function toggleEdit() {
@@ -623,6 +625,13 @@ async function commitRename() {
   void invalidate('artifacts', 'dashboard', 'comments')
   await load()
 }
+async function toggleArchive() {
+  menuOpen.value = false
+  const a = data.value!.artifact
+  await $fetch(`/api/artifacts/${a.id}`, { method: 'PATCH', body: { archived: !a.archived } })
+  void invalidate('artifacts', 'dashboard')
+  await load()
+}
 async function togglePin() {
   menuOpen.value = false
   await $fetch(`/api/artifacts/${data.value!.artifact.id}`, { method: 'PATCH', body: { pinned: !data.value!.artifact.pinned } })
@@ -726,10 +735,10 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
     </Card>
   </div>
 
-  <div v-else-if="data" ref="shellRef" class="shell" :class="{ closed: !sidebarOpen && !editMode, presenting, editing: editMode, focused: !!canvasRef?.focusBoard && !presenting }">
+  <div v-else-if="data" ref="shellRef" class="shell" :class="{ closed: !sidebarOpen && !editMode, presenting, editing: editMode, focused: !presenting }">
     <header v-show="!presenting" class="bar">
       <div class="pill">
-        <Button v-if="isOwner" as-child variant="ghost" size="icon-sm"><NuxtLink to="/artifacts" aria-label="All artifacts"><ArrowLeft /></NuxtLink></Button>
+        <Button v-if="isOwner" as-child variant="ghost" size="icon-sm"><NuxtLink :to="isLibrary ? `/artifacts?workspace=${data.artifact.workspaceId}` : '/artifacts'" :aria-label="isLibrary ? 'Back to the workspace' : 'All artifacts'"><ArrowLeft /></NuxtLink></Button>
 
         <Input
           v-if="renaming"
@@ -747,6 +756,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
               <span class="truncate">{{ data.artifact.title }}</span>
               <ChevronDown class="text-muted-foreground" />
               <Pin v-if="data.artifact.pinned" class="size-3" aria-label="Pinned" />
+              <Badge v-if="data.artifact.archived" variant="secondary">Archived</Badge>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" class="w-64">
@@ -754,17 +764,22 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
             <DropdownMenuSeparator />
             <DropdownMenuItem @select="openRender"><ImageIcon />Export as image…</DropdownMenuItem>
             <DropdownMenuItem @select="exportZip"><Download />Export as .zip</DropdownMenuItem>
-            <DropdownMenuItem @select="duplicate"><Copy />Duplicate</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem @select="startRename"><Pencil />Rename</DropdownMenuItem>
-            <DropdownMenuItem @select="togglePin"><Pin />{{ data.artifact.pinned ? 'Unpin' : 'Pin to top' }}</DropdownMenuItem>
-            <WorkspaceMoveMenu :current="data.artifact.workspaceId" @move="moveTo" />
-            <DropdownMenuItem @select="openShareFiles"><Library />Share files with workspace…</DropdownMenuItem>
+            <template v-if="!isLibrary">
+              <DropdownMenuItem @select="duplicate"><Copy />Duplicate</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem @select="startRename"><Pencil />Rename</DropdownMenuItem>
+              <DropdownMenuItem @select="togglePin"><Pin />{{ data.artifact.pinned ? 'Unpin' : 'Pin to top' }}</DropdownMenuItem>
+              <DropdownMenuItem @select="toggleArchive"><ArchiveRestore v-if="data.artifact.archived" /><Archive v-else />{{ data.artifact.archived ? 'Unarchive' : 'Archive' }}</DropdownMenuItem>
+              <WorkspaceMoveMenu :current="data.artifact.workspaceId" @move="moveTo" />
+              <DropdownMenuItem @select="openShareFiles"><Library />Share files with workspace…</DropdownMenuItem>
+            </template>
             <DropdownMenuItem v-if="hasBoards" @select="openTransfer()"><ArrowRightLeft />Copy or move canvas…</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem @select="refresh"><RefreshCw />Refresh</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" @select="askRemove"><Trash2 />Delete artifact</DropdownMenuItem>
+            <template v-if="!isLibrary">
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" @select="askRemove"><Trash2 />Delete artifact</DropdownMenuItem>
+            </template>
           </DropdownMenuContent>
         </DropdownMenu>
         <h1 v-else class="px-2 text-sm font-semibold">{{ data.artifact.title }}</h1>
@@ -980,8 +995,8 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
 .shell { display: grid; grid-template-columns: 1fr 300px; grid-template-rows: 1fr; height: 100%; background: var(--bg); position: relative; }
 .shell.closed { grid-template-columns: 1fr 0; }
 .shell.editing { grid-template-columns: 1fr 340px; }
-.shell.focused { grid-template-rows: 52px 1fr; }
-.shell.focused .bar { grid-row: 1; margin: 0; padding: 0 10px; height: 52px; align-self: stretch; background: var(--panel); border-bottom: 1px solid var(--border); }
+.shell.focused { grid-template-rows: auto 1fr; }
+.shell.focused .bar { grid-row: 1; margin: 0; padding: 6px 10px; align-self: stretch; min-height: 52px; background: var(--panel); border-bottom: 1px solid var(--border); }
 .shell.focused .pill { background: transparent; border: 0; box-shadow: none; padding: 0; }
 .shell.focused .stage { grid-row: 2; }
 .shell.focused .side { grid-row: 1 / -1; margin: 0; border-radius: 0; border-width: 0 0 0 1px; box-shadow: none; }
@@ -1013,6 +1028,8 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
 @media (max-width: 800px) {
   .shell, .shell.closed { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
   .shell.presenting { grid-template-rows: 1fr; }
+  .shell.focused, .shell.focused.closed { grid-template-rows: auto 1fr auto; }
+  .shell.focused .side { grid-column: 1; grid-row: 3; margin: 0; border-width: 1px 0 0; max-height: 40vh; }
   .side { grid-column: 1; grid-row: 2; margin: 0 10px 10px; max-height: 40vh; }
   .hide-sm { display: none; }
   .popover { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px; width: auto !important; max-height: 70%; }

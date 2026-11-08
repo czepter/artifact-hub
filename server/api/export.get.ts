@@ -6,7 +6,7 @@ import { zip } from '../utils/zip'
 export default defineEventHandler((event) => {
   requireOwner(event)
   const all = []
-  for (const a of listArtifacts()) {
+  for (const a of listArtifacts(undefined, true, 'all')) {
     if (!a.current_version) continue
     const slug = a.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'artifact'
     for (const f of exportFiles(a.id).files) all.push({ name: `${slug}-${a.id.slice(0, 8)}/${f.name}`, data: f.data })

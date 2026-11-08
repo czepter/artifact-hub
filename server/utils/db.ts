@@ -144,6 +144,8 @@ export function useDb(): DatabaseSync {
   const cols = db.prepare('PRAGMA table_info(artifacts)').all() as { name: string }[]
   if (!cols.some(c => c.name === 'pinned')) db.exec('ALTER TABLE artifacts ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
   if (!cols.some(c => c.name === 'opened_at')) db.exec('ALTER TABLE artifacts ADD COLUMN opened_at TEXT')
+  if (!cols.some(c => c.name === 'kind')) db.exec("ALTER TABLE artifacts ADD COLUMN kind TEXT NOT NULL DEFAULT 'artifact'")
+  if (!cols.some(c => c.name === 'archived_at')) db.exec('ALTER TABLE artifacts ADD COLUMN archived_at TEXT')
   if (!cols.some(c => c.name === 'opens')) db.exec('ALTER TABLE artifacts ADD COLUMN opens INTEGER NOT NULL DEFAULT 0')
   // OAuth codes and tokens belong to the member who approved them, with the scopes they chose.
   for (const t of ['oauth_codes', 'oauth_tokens']) {

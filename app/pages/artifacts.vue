@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'shell', access: 'member' })
-import { Library, MoreHorizontal, Pencil, Pin, Trash2 } from '@lucide/vue'
+import { Archive, ArchiveRestore, Library, MoreHorizontal, Pencil, Pin, Trash2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
@@ -10,9 +10,11 @@ const { me } = useOwner()
 const { list: workspaces, load: loadWorkspaces } = useWorkspaces()
 const route = useRoute()
 const wsId = computed(() => (typeof route.query.workspace === 'string' ? route.query.workspace : ''))
+const showArchived = computed(() => route.query.archived === '1')
+const viewQuery = (archived: boolean) => ({ ...route.query, archived: archived ? '1' : undefined })
 // One cache entry per workspace filter: switching back renders at once and revalidates quietly.
-const { data: rowData, loading, refresh: refreshRows } = useHubData(() => `artifacts:${wsId.value}`, () =>
-  $fetch<Row[]>('/api/artifacts', { query: wsId.value ? { workspace: wsId.value } : {} }).catch(() => [] as Row[]))
+const { data: rowData, loading, refresh: refreshRows } = useHubData(() => `artifacts:${wsId.value}:${showArchived.value ? 'archived' : 'live'}`, () =>
+  $fetch<Row[]>('/api/artifacts', { query: { ...(wsId.value ? { workspace: wsId.value } : {}), ...(showArchived.value ? { archived: 1 } : {}) } }).catch(() => [] as Row[]))
 const rows = computed(() => rowData.value ?? [])
 const origin = computed(() => (import.meta.client ? location.origin : ''))
 const ws = computed(() => workspaces.value.find(w => w.id === wsId.value))
@@ -22,6 +24,7 @@ const groups = computed(() => {
   const all = rows.value
   const pinned = all.filter(r => r.pinned)
   const rest = all.filter(r => !r.pinned)
+  if (showArchived.value) return rest.length || pinned.length ? [{ label: 'Archived', items: all }] : []
   return [pinned.length && { label: 'Pinned', items: pinned }, rest.length && { label: pinned.length ? 'Recent' : 'All', items: rest }].filter(Boolean) as { label: string, items: Row[] }[]
 })
 onMounted(loadWorkspaces)
@@ -30,6 +33,11 @@ useHead({ title: computed(() => `${ws.value?.name ?? 'Artifacts'} · Artifact Hu
 async function move(r: Row, workspaceId: string) {
   await $fetch(`/api/artifacts/${r.id}`, { method: 'PATCH', body: { workspaceId } })
   await Promise.all([refreshRows(), loadWorkspaces(), invalidate('dashboard')])
+}
+
+async function archive(r: Row, archived: boolean) {
+  await $fetch(`/api/artifacts/${r.id}`, { method: 'PATCH', body: { archived } })
+  await Promise.all([refreshRows(), invalidate('dashboard')])
 }
 
 const editing = ref(false)
@@ -55,6 +63,9 @@ async function removeWs() {
       <h1 class="flex items-center gap-2 text-xl font-semibold tracking-tight"><WorkspaceDot v-if="ws" :color="ws.color" /><span class="truncate">{{ ws?.name ?? 'Artifacts' }}</span></h1>
       <p v-if="ws?.description" class="mt-1 text-sm text-muted-foreground">{{ ws.description }}</p>
     </div>
+    <NuxtLink :to="{ query: viewQuery(!showArchived) }" class="ml-auto shrink-0 self-center rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
+      {{ showArchived ? 'Back to artifacts' : 'Archived' }}
+    </NuxtLink>
     <DropdownMenu v-if="ws && canEdit">
       <DropdownMenuTrigger as-child><Button variant="ghost" size="icon" class="size-8 shrink-0" aria-label="Workspace actions"><MoreHorizontal /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -69,7 +80,8 @@ async function removeWs() {
   </div>
   <BoardSkeleton v-if="loading" :rows="6" />
   <template v-else>
-    <p v-if="!rows.length && !ws" class="px-1 text-sm text-muted-foreground">Nothing here yet. Connect an MCP client to <code class="rounded bg-muted px-1 py-0.5">{{ origin }}/mcp</code> and ask it to publish something.</p>
+    <p v-if="showArchived && !rows.length" class="px-1 text-sm text-muted-foreground">Nothing archived. Archive an artifact from its menu to tuck it away; its links and comments keep working.</p>
+    <p v-else-if="!rows.length && !ws" class="px-1 text-sm text-muted-foreground">Nothing here yet. Connect an MCP client to <code class="rounded bg-muted px-1 py-0.5">{{ origin }}/mcp</code> and ask it to publish something.</p>
     <p v-else-if="!rows.length" class="px-1 text-sm text-muted-foreground">No artifacts in this workspace yet. Move one here from its menu, or ask a connected client to create one in “{{ ws?.name }}”.</p>
     <div class="grid gap-6">
       <Board v-for="g in groups" :key="g.label" :label="g.label">
@@ -84,9 +96,13 @@ async function removeWs() {
                 </span>
               </NuxtLink>
             </Button>
-            <DropdownMenu v-if="canEdit && workspaces.length > 1">
+            <DropdownMenu v-if="canEdit">
               <DropdownMenuTrigger as-child><Button variant="ghost" size="icon" class="mr-2 size-8 shrink-0" :aria-label="`Actions for ${r.title}`"><MoreHorizontal /></Button></DropdownMenuTrigger>
-              <DropdownMenuContent align="end"><WorkspaceMoveMenu :current="r.workspace_id" @move="move(r, $event)" /></DropdownMenuContent>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem v-if="showArchived" @select="archive(r, false)"><ArchiveRestore />Unarchive</DropdownMenuItem>
+                <DropdownMenuItem v-else @select="archive(r, true)"><Archive />Archive</DropdownMenuItem>
+                <WorkspaceMoveMenu v-if="workspaces.length > 1" :current="r.workspace_id" @move="move(r, $event)" />
+              </DropdownMenuContent>
             </DropdownMenu>
           </li>
         </ul>

@@ -4,7 +4,7 @@ import { logEvent } from './events'
 import { useDb, now } from './db'
 import { emitArtifact } from './bus'
 import { resolveWorkspaceId } from './workspaces'
-import { referencedSharedFiles } from './sharedFiles'
+import { referencedSharedFiles, sharedPublished } from './sharedFiles'
 
 export const LIMITS = { fileBytes: 5 * 1024 * 1024, versionBytes: 20 * 1024 * 1024, files: 500 }
 
@@ -33,15 +33,18 @@ export function cleanPath(raw: string): string {
 export interface FileInput { path: string, content: string, encoding?: 'utf8' | 'base64' }
 
 export interface ArtifactRow {
-  id: string, title: string, current_version: number, pinned: number, created_at: string, updated_at: string, opened_at: string | null, opens: number, workspace_id: string
+  id: string, title: string, current_version: number, pinned: number, created_at: string, updated_at: string, opened_at: string | null, opens: number, workspace_id: string, kind: 'artifact' | 'shared', archived_at: string | null
 }
 
 /** `workspaceId` (an id, see resolveWorkspaceId) limits the list to one workspace. */
-export function listArtifacts(workspaceId?: string): ArtifactRow[] {
-  const db = useDb()
-  return (workspaceId
-    ? db.prepare('SELECT * FROM artifacts WHERE workspace_id = ? ORDER BY pinned DESC, updated_at DESC').all(workspaceId)
-    : db.prepare('SELECT * FROM artifacts ORDER BY pinned DESC, updated_at DESC').all()) as unknown as ArtifactRow[]
+export function listArtifacts(workspaceId?: string, includeShared = false, archived: 'hide' | 'only' | 'all' = 'hide'): ArtifactRow[] {
+  const where = [
+    workspaceId ? 'workspace_id = ?' : '',
+    includeShared ? '' : "kind = 'artifact'",
+    archived === 'hide' ? 'archived_at IS NULL' : archived === 'only' ? 'archived_at IS NOT NULL' : '',
+  ].filter(Boolean)
+  const q = `SELECT * FROM artifacts${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY ${archived === 'only' ? 'archived_at DESC' : 'pinned DESC, updated_at DESC'}`
+  return useDb().prepare(q).all(...(workspaceId ? [workspaceId] : [])) as unknown as ArtifactRow[]
 }
 
 export function getArtifact(id: string): ArtifactRow | undefined {
@@ -131,6 +134,7 @@ export function publish(opts: {
     db.prepare('UPDATE artifacts SET current_version = ?, updated_at = ?, title = COALESCE(?, title) WHERE id = ?').run(next, t, opts.id ? (opts.title ?? null) : null, id)
     db.exec('COMMIT')
     emitArtifact(id, { type: 'version', version: next })
+    sharedPublished(id)
     void warmThumbs(id, next).catch(() => {})
     try { logEvent(next === 1 ? 'created' : 'published', `${(db.prepare('SELECT title FROM artifacts WHERE id = ?').get(id) as { title: string }).title} v${next}`) } catch { /* the log never blocks publishing */ }
     return { id, version: next }
@@ -331,8 +335,16 @@ export function setPinned(id: string, pinned: boolean) {
   emitArtifact(id, { type: 'meta' })
 }
 
+/** Archived artifacts drop out of lists, the dashboard and search-by-list; links, share links and comments keep working. */
+export function setArchived(id: string, archived: boolean) {
+  if (requireArtifact(id).kind === 'shared') throw createError({ statusCode: 409, statusMessage: "The workspace's shared files cannot be archived" })
+  useDb().prepare('UPDATE artifacts SET archived_at = ? WHERE id = ?').run(archived ? now() : null, id)
+  emitArtifact(id, { type: 'meta' })
+  try { logEvent(archived ? 'archived' : 'unarchived', requireArtifact(id).title) } catch { /* the log never blocks */ }
+}
+
 export function deleteArtifact(id: string) {
-  requireArtifact(id)
+  if (requireArtifact(id).kind === 'shared') throw createError({ statusCode: 409, statusMessage: "The workspace's shared files cannot be deleted. Remove the files instead." })
   // Cascades to versions, files, shares, comments and stored data.
   useDb().prepare('DELETE FROM artifacts WHERE id = ?').run(id)
 }
@@ -340,6 +352,7 @@ export function deleteArtifact(id: string) {
 /** Copies the live version's files into a new artifact. Comments, shares and stored data stay behind. */
 export function duplicateArtifact(id: string) {
   const a = requireArtifact(id)
+  if (a.kind === 'shared') throw createError({ statusCode: 409, statusMessage: "The workspace's shared files cannot be duplicated" })
   const files = listFiles(id, a.current_version).map((f) => {
     const file = readFile(id, a.current_version, f.path)!
     return { path: f.path, content: file.content.toString('base64'), encoding: 'base64' as const }
