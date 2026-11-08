@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'shell', access: 'member' })
+definePageMeta({ layout: 'shell', access: 'member', wide: true })
 import { Archive, ArchiveRestore, LayoutGrid, Library, List, MoreHorizontal, Pencil, Pin, Search, Trash2, X } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -148,7 +148,7 @@ async function removeWs() {
     </DropdownMenu>
   </div>
   <div class="mb-5 grid gap-2.5">
-    <div class="relative">
+    <div class="relative max-w-2xl">
       <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
       <Input ref="searchEl" v-model="qInput" type="search" aria-label="Search artifacts" aria-keyshortcuts="/" autocomplete="off" placeholder="Search artifacts and boards" class="h-11 pl-9 pr-10 text-base [&::-webkit-search-cancel-button]:hidden" @keydown.esc="qInput ? (qInput = '') : ($event.target as HTMLElement).blur()" />
       <Button v-if="qInput" variant="ghost" size="icon" class="absolute right-1 top-1/2 size-8 -translate-y-1/2" aria-label="Clear search" @click="clearSearch"><X /></Button>
@@ -188,7 +188,7 @@ async function removeWs() {
     </div>
     <div class="grid gap-6">
       <Board v-for="g in groups" :key="g.label" :label="g.label">
-        <ul v-if="view === 'cards'" class="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul v-if="view === 'cards'" class="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-3 p-3">
           <li v-for="r in g.items" :key="r.id" class="min-w-0">
             <ArtifactCard :artifact="r">
               <template v-if="canEdit" #actions>

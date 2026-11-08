@@ -20,7 +20,7 @@ useHead({ title: 'Admin · Artifact Hub' })
   <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Overview</h1>
   <div class="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
     <ConnectClient />
-    <div v-if="o" class="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div v-if="o" class="grid grid-cols-[minmax(0,1fr)] items-start gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <Board label="Recent activity">
         <p v-if="!events.length" class="px-4 py-6 text-sm text-muted-foreground">Nothing has happened yet.</p>
         <ul v-else class="divide-y">
@@ -42,7 +42,7 @@ useHead({ title: 'Admin · Artifact Hub' })
         <div class="border-t p-3"><Button as-child variant="outline" size="sm"><a href="/api/export" download><Download />Export all as zip</a></Button></div>
       </Board>
     </div>
-    <div v-else-if="loading" class="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"><BoardSkeleton :rows="5" /><BoardSkeleton :rows="5" /></div>
+    <div v-else-if="loading" class="grid grid-cols-[minmax(0,1fr)] items-start gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"><BoardSkeleton :rows="5" /><BoardSkeleton :rows="5" /></div>
     <p v-else class="px-1 text-sm text-muted-foreground">Could not load the overview. Reload to try again.</p>
   </div>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'shell', access: 'member' })
+definePageMeta({ layout: 'shell', access: 'member', wide: true })
 import { Check, MessageSquare } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -93,7 +93,7 @@ const emptyText = computed(() => filter.value === 'open'
     </Tabs>
   </div>
   <BoardSkeleton v-if="loading" />
-  <div v-else class="grid items-start gap-4 min-[800px]:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+  <div v-else class="grid grid-cols-[minmax(0,1fr)] items-start gap-4 min-[800px]:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
     <Board :label="`${filter === 'open' ? 'Open threads' : filter === 'resolved' ? 'Resolved threads' : 'All threads'} (${shown.length})`">
       <p v-if="!shown.length" class="px-4 py-6 text-sm text-muted-foreground">{{ emptyText }}</p>
       <ul v-else ref="listEl" aria-label="Threads" class="divide-y min-[800px]:max-h-[calc(100vh-14rem)] min-[800px]:overflow-y-auto">
