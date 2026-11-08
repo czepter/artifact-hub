@@ -1,33 +1,25 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell', access: 'member' })
 import { Pin } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 interface Row { id: string, title: string, current_version: number, updated_at: string, pinned: number, opened_at: string | null, opens: number }
-const rows = ref<Row[] | null>(null)
-const { me, authed, load: loadOwner } = useOwner()
+const { data: rowData, loading } = useHubData('artifacts', () => $fetch<Row[]>('/api/artifacts').catch(() => [] as Row[]))
+const rows = computed(() => rowData.value ?? [])
 const origin = computed(() => (import.meta.client ? location.origin : ''))
 const groups = computed(() => {
-  const all = rows.value ?? []
+  const all = rows.value
   const pinned = all.filter(r => r.pinned)
   const rest = all.filter(r => !r.pinned)
   return [pinned.length && { label: 'Pinned', items: pinned }, rest.length && { label: pinned.length ? 'Recent' : 'All', items: rest }].filter(Boolean) as { label: string, items: Row[] }[]
 })
-
-async function load() {
-  await loadOwner()
-  if (!authed.value) return navigateTo('/', { external: true })
-  rows.value = await $fetch<Row[]>('/api/artifacts').catch(() => [])
-}
-onMounted(load)
 useHead({ title: 'Artifacts · Artifact Hub' })
-
 </script>
 
 <template>
-  <AppShell v-if="rows && me" :me="me">
-    <template #actions>
-      <NewArtifactActions />
-    </template>
-    <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Artifacts</h1>
+  <Teleport defer to="#shell-actions"><NewArtifactActions /></Teleport>
+  <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Artifacts</h1>
+  <BoardSkeleton v-if="loading" :rows="6" />
+  <template v-else>
     <p v-if="!rows.length" class="px-1 text-sm text-muted-foreground">Nothing here yet. Connect an MCP client to <code class="rounded bg-muted px-1 py-0.5">{{ origin }}/mcp</code> and ask it to publish something.</p>
     <div class="grid gap-6">
       <Board v-for="g in groups" :key="g.label" :label="g.label">
@@ -43,5 +35,5 @@ useHead({ title: 'Artifacts · Artifact Hub' })
         </ul>
       </Board>
     </div>
-  </AppShell>
+  </template>
 </template>

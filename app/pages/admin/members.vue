@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell', access: 'owner' })
 import { ChevronDown, Copy, MoreHorizontal, Plus } from '@lucide/vue'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -13,9 +14,10 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 interface Member { id: string, name: string, email: string, role: string, created_at: string }
 interface Invite { id: string, email: string, role: string, created_at: string }
-const { me, authed, load: loadOwner } = useOwner()
-const data = ref<{ members: Member[], invites: Invite[] } | null>(null)
-const error = ref('')
+const { me } = useOwner()
+const { data, error: loadError, refresh } = useHubData('members', () => $fetch<{ members: Member[], invites: Invite[] }>('/api/members'))
+const error = computed(() => (data.value ? '' : (loadError.value as any)?.data?.statusMessage ?? (loadError.value ? 'Could not load members.' : '')))
+const load = refresh
 const inviteOpen = ref(false)
 const inviteEmail = ref('')
 const inviteRole = ref<'editor' | 'commenter'>('editor')
@@ -24,15 +26,6 @@ const inviteErr = ref('')
 const copied = ref('')
 const removing = ref<Member | null>(null)
 
-async function load() {
-  try { data.value = await $fetch('/api/members') } catch (e: any) { error.value = e?.data?.statusMessage ?? 'Could not load members.' }
-}
-onMounted(async () => {
-  await loadOwner()
-  if (!authed.value) return navigateTo('/', { external: true })
-  if (me.value?.role !== 'owner') return navigateTo('/dashboard', { external: true })
-  await load()
-})
 const initials = (m: { name?: string, email: string }) => (m.name || m.email).replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(p => p[0]!.toUpperCase()).join('') || '?'
 
 function openInvite() { inviteEmail.value = ''; inviteRole.value = 'editor'; inviteLink.value = ''; inviteErr.value = ''; inviteOpen.value = true }
@@ -56,9 +49,10 @@ useHead({ title: 'Members · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me || !data" class="hub-ground center" role="status"><span class="muted">{{ error || 'Loading…' }}</span></div>
-  <AppShell v-else :me="me">
-    <template #actions><Button size="sm" @click="openInvite"><Plus />Invite</Button></template>
+  <p v-if="error" class="px-1 text-sm text-muted-foreground" role="alert">{{ error }}</p>
+  <BoardSkeleton v-else-if="!data" />
+  <template v-else>
+    <Teleport defer to="#shell-actions"><Button size="sm" @click="openInvite"><Plus />Invite</Button></Teleport>
     <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Members</h1>
     <div class="grid gap-6">
       <Board :label="`People (${data.members.length})`">
@@ -66,7 +60,7 @@ useHead({ title: 'Members · Artifact Hub' })
           <li v-for="m in data.members" :key="m.id" class="flex items-center gap-3 px-4 py-3">
             <Avatar class="size-8"><AvatarFallback class="text-xs font-medium">{{ initials(m) }}</AvatarFallback></Avatar>
             <div class="min-w-0 flex-1">
-              <div class="truncate text-sm font-medium">{{ m.name || m.email }}<span v-if="m.id === me.id" class="ml-1 font-normal text-muted-foreground">(you)</span></div>
+              <div class="truncate text-sm font-medium">{{ m.name || m.email }}<span v-if="m.id === me?.id" class="ml-1 font-normal text-muted-foreground">(you)</span></div>
               <div class="truncate text-xs text-muted-foreground">{{ m.email }}</div>
             </div>
             <Badge v-if="m.role === 'owner'" variant="secondary">Owner</Badge>
@@ -140,5 +134,5 @@ useHead({ title: 'Members · Artifact Hub' })
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  </AppShell>
+  </template>
 </template>

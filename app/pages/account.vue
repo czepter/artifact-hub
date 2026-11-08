@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ layout: 'shell', access: 'member' })
 import { KeyRound, Plus } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -11,33 +12,27 @@ import { authClient } from '~/lib/authClient'
 interface Pk { id: string, name?: string | null, createdAt: string | Date }
 interface Sess { id: string, token: string, userAgent?: string | null, createdAt: string | Date, updatedAt: string | Date }
 interface Acc { id: string, providerId: string }
-const { me, authed, load: loadOwner } = useOwner()
-const passkeys = ref<Pk[]>([])
-const sessions = ref<Sess[]>([])
-const accounts = ref<Acc[]>([])
-const githubOn = ref(false)
-const currentToken = ref('')
+const { me } = useOwner()
+interface AccountData { passkeys: Pk[], sessions: Sess[], accounts: Acc[], githubOn: boolean, currentToken: string }
+async function fetchAccount(): Promise<AccountData> {
+  const [p, s, a, c, cur] = await Promise.all([
+    authClient.passkey.listUserPasskeys(), authClient.listSessions(), authClient.listAccounts(),
+    $fetch<{ github: boolean }>('/api/auth-config'), authClient.getSession(),
+  ])
+  return { passkeys: (p.data ?? []) as Pk[], sessions: (s.data ?? []) as Sess[], accounts: (a.data ?? []) as Acc[], githubOn: c.github, currentToken: cur.data?.session.token ?? '' }
+}
+// One cached entry: coming back to this page shows the last known lists at once and revalidates quietly.
+const { data: acct, loading, refresh: load } = useHubData('account', fetchAccount)
+const passkeys = computed(() => acct.value?.passkeys ?? [])
+const sessions = computed(() => acct.value?.sessions ?? [])
+const accounts = computed(() => acct.value?.accounts ?? [])
+const githubOn = computed(() => acct.value?.githubOn ?? false)
+const currentToken = computed(() => acct.value?.currentToken ?? '')
 const msg = ref('')
 const pwOpen = ref(false)
 const pw = reactive({ current: '', next: '' })
 const pwErr = ref('')
 
-async function load() {
-  const [p, s, a, c, cur] = await Promise.all([
-    authClient.passkey.listUserPasskeys(), authClient.listSessions(), authClient.listAccounts(),
-    $fetch<{ github: boolean }>('/api/auth-config'), authClient.getSession(),
-  ])
-  passkeys.value = (p.data ?? []) as Pk[]
-  sessions.value = (s.data ?? []) as Sess[]
-  accounts.value = (a.data ?? []) as Acc[]
-  githubOn.value = c.github
-  currentToken.value = cur.data?.session.token ?? ''
-}
-onMounted(async () => {
-  await loadOwner()
-  if (!authed.value) return navigateTo('/', { external: true })
-  await load()
-})
 const when = (d: string | Date) => ago(new Date(d).toISOString())
 const hasGithub = computed(() => accounts.value.some(a => a.providerId === 'github'))
 const hasPassword = computed(() => accounts.value.some(a => a.providerId === 'credential'))
@@ -64,15 +59,15 @@ useHead({ title: 'Account · Artifact Hub' })
 </script>
 
 <template>
-  <div v-if="!me" class="hub-ground center" role="status"><span class="muted">Loading…</span></div>
-  <AppShell v-else :me="me">
+  <BoardSkeleton v-if="loading" :rows="3" />
+  <template v-else>
     <h1 class="mb-5 px-1 text-xl font-semibold tracking-tight">Account</h1>
     <div class="grid max-w-2xl gap-6">
       <Board label="Profile">
         <dl class="grid gap-3 p-4 text-sm sm:grid-cols-2">
-          <div><dt class="text-xs text-muted-foreground">Name</dt><dd>{{ me.name || '—' }}</dd></div>
-          <div><dt class="text-xs text-muted-foreground">E-mail</dt><dd>{{ me.email }}</dd></div>
-          <div><dt class="text-xs text-muted-foreground">Role</dt><dd class="capitalize">{{ me.role }}</dd></div>
+          <div><dt class="text-xs text-muted-foreground">Name</dt><dd>{{ me?.name || '—' }}</dd></div>
+          <div><dt class="text-xs text-muted-foreground">E-mail</dt><dd>{{ me?.email }}</dd></div>
+          <div><dt class="text-xs text-muted-foreground">Role</dt><dd class="capitalize">{{ me?.role }}</dd></div>
         </dl>
       </Board>
 
@@ -126,5 +121,5 @@ useHead({ title: 'Account · Artifact Hub' })
         <DialogFooter><Button variant="outline" @click="pwOpen = false">Cancel</Button><Button :disabled="!pw.current || pw.next.length < 10" @click="changePassword">Change password</Button></DialogFooter>
       </DialogContent>
     </Dialog>
-  </AppShell>
+  </template>
 </template>

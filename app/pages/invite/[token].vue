@@ -7,16 +7,14 @@ import { Label } from '@/components/ui/label'
 import { authClient } from '~/lib/authClient'
 
 const token = String(useRoute().params.token)
-const invite = ref<{ email: string, role: string } | null>(null)
-const invalid = ref(false)
+// Looked up on the server, so the form (or "not available") is in the first response.
+const { data: invite, error: lookupError } = await useFetch<{ email: string, role: string }>('/api/invites/lookup', { query: { token }, key: `invite-${token}` })
+const invalid = computed(() => !!lookupError.value || !invite.value)
 const name = ref('')
 const password = ref('')
 const err = ref('')
 const busy = ref(false)
 
-onMounted(async () => {
-  try { invite.value = await $fetch('/api/invites/lookup', { query: { token } }) } catch { invalid.value = true }
-})
 async function join() {
   if (!invite.value) return
   err.value = ''
