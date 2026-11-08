@@ -23,6 +23,7 @@ const links = computed(() => [{ to: '/dashboard', label: 'Dashboard' }, { to: '/
               <NuxtLink :to="l.to" :aria-current="(l.to === '/admin' ? inAdmin : isActive(l.to)) ? 'page' : undefined">{{ l.label }}<Badge v-if="l.to === '/comments' && openThreads" class="ml-1 h-4 min-w-4 rounded-full px-1 text-[11px]">{{ openThreads }}</Badge></NuxtLink>
             </Button>
           </nav>
+          <WorkspaceSwitcher :can-create="me.role !== 'commenter'" />
         </div>
         <div v-if="inAdmin" class="float pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl border bg-card p-1">
           <nav aria-label="Admin sections" class="flex items-center gap-0.5">

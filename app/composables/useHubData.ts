@@ -7,7 +7,7 @@ import type { AsyncDataOptions } from '#app'
  *  - `loading` is true only for the first load (nothing to show yet); `refreshing` is a background revalidation.
  * Mutations call `invalidate(...keys)`; keys whose page is not mounted simply revalidate the next time it is.
  */
-export function useHubData<T>(key: string, fetcher: () => Promise<T>, opts: Pick<AsyncDataOptions<T>, 'immediate' | 'default'> & { revalidate?: boolean } = {}) {
+export function useHubData<T>(key: MaybeRefOrGetter<string>, fetcher: () => Promise<T>, opts: Pick<AsyncDataOptions<T>, 'immediate' | 'default'> & { revalidate?: boolean } = {}) {
   const { revalidate = true, ...rest } = opts
   const r = useAsyncData<T>(key, fetcher, {
     ...rest,
@@ -21,7 +21,8 @@ export function useHubData<T>(key: string, fetcher: () => Promise<T>, opts: Pick
   return { ...r, loading, refreshing }
 }
 
-/** Re-fetch these keys now if their page is on screen; otherwise they revalidate on next visit. */
+/** Re-fetch these keys now if their page is on screen; otherwise they revalidate on next visit. A key also covers its `key:suffix` variants (`artifacts` -> `artifacts:<workspace>`). */
 export function invalidate(...keys: string[]) {
-  return refreshNuxtData(keys)
+  const have = Object.keys(useNuxtApp().payload.data)
+  return refreshNuxtData(have.filter(h => keys.some(k => h === k || h.startsWith(`${k}:`))))
 }

@@ -629,6 +629,13 @@ async function togglePin() {
   void invalidate('artifacts', 'dashboard')
   await load()
 }
+const { load: loadWorkspaces } = useWorkspaces()
+onMounted(loadWorkspaces)
+async function moveTo(workspaceId: string) {
+  menuOpen.value = false
+  await $fetch(`/api/artifacts/${data.value!.artifact.id}`, { method: 'PATCH', body: { workspaceId } })
+  await load()
+}
 async function duplicate() {
   menuOpen.value = false
   const r = await $fetch<{ id: string }>(`/api/artifacts/${data.value!.artifact.id}/duplicate`, { method: 'POST' })
@@ -744,6 +751,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
             <DropdownMenuSeparator />
             <DropdownMenuItem @select="startRename"><Pencil />Rename</DropdownMenuItem>
             <DropdownMenuItem @select="togglePin"><Pin />{{ data.artifact.pinned ? 'Unpin' : 'Pin to top' }}</DropdownMenuItem>
+            <WorkspaceMoveMenu :current="data.artifact.workspaceId" @move="moveTo" />
             <DropdownMenuSeparator />
             <DropdownMenuItem @select="refresh"><RefreshCw />Refresh</DropdownMenuItem>
             <DropdownMenuSeparator />

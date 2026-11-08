@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { ensureWorkspaceSchema } from './workspaces'
 
 let db: DatabaseSync | null = null
 
@@ -132,6 +133,7 @@ export function useDb(): DatabaseSync {
   const tc = db.prepare('PRAGMA table_info(oauth_tokens)').all() as { name: string }[]
   if (!tc.some(x => x.name === 'created_at')) db.exec('ALTER TABLE oauth_tokens ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0')
   if (!tc.some(x => x.name === 'last_used')) db.exec('ALTER TABLE oauth_tokens ADD COLUMN last_used INTEGER')
+  ensureWorkspaceSchema(db)
   return db
 }
 
