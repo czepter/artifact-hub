@@ -82,7 +82,7 @@ pictures; otherwise each board is a frame with the page's text (headings, paragr
 (`screenshot` when drawn for real). The browser is found at `HUB_CHROMIUM`, `/usr/bin/chromium*`, Chrome, or a Playwright download in `~/.cache/ms-playwright`.
 Boards run in a fresh context with **no network** (only the artifact's own files are served to them). `HUB_CHROMIUM_NO_SANDBOX=1` adds `--no-sandbox`
 for containers that cannot start the sandbox; that lets page scripts run with less isolation, so enable it only if you trust the artifacts' authors.
-`HUB_RENDER_HTML=0` turns the browser off. The Docker image has none by default; build one with it: `docker build --build-arg WITH_CHROMIUM=1 .` (about +350 MB).
+`HUB_RENDER_HTML=0` turns the browser off. The published image includes one; a plain `docker build .` has none, add it with `--build-arg WITH_CHROMIUM=1` (about +350 MB). The zoomed-out canvas uses it too: without a browser, boards load as live pages at every zoom.
 `HUB_RENDER_SYSTEM_FONTS=1` also loads system fonts (for scripts the bundled font lacks, e.g. CJK, which otherwise render as boxes).
 
 **Cache and load.** Finished renders and board pictures are cached in memory (96 MB, keyed by artifact, version and options, with ETags); two renders run at once,

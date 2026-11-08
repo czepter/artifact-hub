@@ -1,3 +1,4 @@
+import { warmThumbs } from './render/thumb'
 import { randomUUID, randomBytes } from 'node:crypto'
 import { logEvent } from './events'
 import { useDb, now } from './db'
@@ -128,6 +129,7 @@ export function publish(opts: {
     db.prepare('UPDATE artifacts SET current_version = ?, updated_at = ?, title = COALESCE(?, title) WHERE id = ?').run(next, t, opts.id ? (opts.title ?? null) : null, id)
     db.exec('COMMIT')
     emitArtifact(id, { type: 'version', version: next })
+    void warmThumbs(id, next).catch(() => {})
     try { logEvent(next === 1 ? 'created' : 'published', `${(db.prepare('SELECT title FROM artifacts WHERE id = ?').get(id) as { title: string }).title} v${next}`) } catch { /* the log never blocks publishing */ }
     return { id, version: next }
   } catch (e) {

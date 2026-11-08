@@ -78,7 +78,7 @@ export interface Shot { uri: string, w: number, h: number }
  * Draws each item at its size (device scale `dsf`, 1 to 3) and returns PNG data URIs. An item that fails (timeout,
  * crash) is left out: the caller falls back to the outline for it.
  */
-export async function shootBoards(artifactId: string, version: number, items: ShotItem[], dsf: number, tweaks: (path: string) => Record<string, unknown> | undefined): Promise<Map<string, Shot>> {
+export async function shootBoards(artifactId: string, version: number, items: ShotItem[], dsf: number, tweaks: (path: string) => Record<string, unknown> | undefined, jpegQuality?: number): Promise<Map<string, Shot>> {
   const out = new Map<string, Shot>()
   const browser = await getBrowser()
   if (!browser || !items.length) return out
@@ -87,8 +87,9 @@ export async function shootBoards(artifactId: string, version: number, items: Sh
   try {
     for (const it of items) {
       // Pictures are capped at 16 megapixels (a huge board at device scale 2 would not fit a texture): lower the scale, or leave the board to the outline.
-      const d = Math.min(Math.min(3, Math.max(1, dsf)), Math.sqrt(MAX_SHOT_PIXELS / (it.w * Math.max(it.h, 1))))
-      if (d < 1 || Date.now() - started > TOTAL_BUDGET_MS) continue
+      const minD = jpegQuality ? 0.25 : 1 // a JPEG is asked for as a small preview
+      const d = Math.min(Math.min(3, Math.max(minD, dsf)), Math.sqrt(MAX_SHOT_PIXELS / (it.w * Math.max(it.h, 1))))
+      if (d < minD || Date.now() - started > TOTAL_BUDGET_MS) continue
       const ctx = await browser.newContext({ viewport: { width: Math.round(it.w), height: Math.round(it.h) }, deviceScaleFactor: d, serviceWorkers: 'block', acceptDownloads: false, javaScriptEnabled: true, permissions: [], colorScheme: 'light' })
       try {
         await ctx.route('**/*', async (route: any) => {
@@ -114,8 +115,8 @@ export async function shootBoards(artifactId: string, version: number, items: Sh
           h = Math.min(MAX_SHOT_H, Math.max(h, await page.evaluate(() => document.documentElement.scrollHeight)))
           if (h !== Math.round(it.h)) { await page.setViewportSize({ width: Math.round(it.w), height: h }); await page.waitForTimeout(100) }
         }
-        const png: Buffer = await page.screenshot({ type: 'png', timeout: 10_000 })
-        out.set(it.path, { uri: `data:image/png;base64,${png.toString('base64')}`, w: Math.round(it.w), h })
+        const shot: Buffer = await page.screenshot(jpegQuality ? { type: 'jpeg', quality: jpegQuality, timeout: 10_000 } : { type: 'png', timeout: 10_000 })
+        out.set(it.path, { uri: `data:image/${jpegQuality ? 'jpeg' : 'png'};base64,${shot.toString('base64')}`, w: Math.round(it.w), h })
       } catch (e) {
         console.warn(`[render] board ${it.path} not drawn:`, (e as Error).message.split('\n')[0])
       } finally { await ctx.close().catch(() => {}) }

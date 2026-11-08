@@ -92,7 +92,7 @@ const revOf = computed(() => Object.fromEntries(props.data.files.map(f => [f.pat
 const canvasLevel = computed(() => props.editMode && isCanvas.value && !focusBoard.value)
 const elementLevel = (path: string) => props.editMode && (!isCanvas.value || focusBoard.value === path)
 
-const boards = computed<BoardView[]>(() => {
+const boardBase = computed<BoardView[]>(() => {
   const c = cv.value
   const live = (p: string) => `${props.data.frameBase}${p.split('/').map(encodeURIComponent).join('/')}?r=${revOf.value[p] ?? 0}`
   const src = (p: string) => frozenSrc.value?.[p] ?? live(p)
@@ -100,12 +100,18 @@ const boards = computed<BoardView[]>(() => {
     const order: string[] = Array.isArray(c.order) ? c.order : Object.keys(c.boards)
     const rest = Object.keys(c.boards).filter(p => !order.includes(p))
     return [...order, ...rest].filter(p => c.boards[p] && revOf.value[p] !== undefined).map((p) => {
-      const b = c.boards[p], o = boardOv[p] ?? {}
-      return { path: p, x: o.x ?? (+b.x || 0), y: o.y ?? (+b.y || 0), w: o.w ?? (+b.w || 800), h: o.h ?? (+b.h || 600), title: b.title || p, interactive: !!b.is_interactive, expand: b.expand || '', src: src(p), locked: !!b.locked, group: b.group }
+      const b = c.boards[p]
+      return { path: p, x: +b.x || 0, y: +b.y || 0, w: +b.w || 800, h: +b.h || 600, title: b.title || p, interactive: !!b.is_interactive, expand: b.expand || '', src: src(p), locked: !!b.locked, group: b.group }
     })
   }
   return [{ path: 'index.html', x: 0, y: 0, w: size.w, h: size.h, title: '', interactive: true, expand: 'fill', src: src('index.html'), locked: false }]
 })
+
+/** Live drag overrides applied on top; only boards with an override get a new object, so the others keep their identity. */
+const boards = computed<BoardView[]>(() => boardBase.value.map((b) => {
+  const o = boardOv[b.path]
+  return o ? { ...b, x: o.x ?? b.x, y: o.y ?? b.y, w: o.w ?? b.w, h: o.h ?? b.h } : b
+}))
 
 /** A page-type board (expand: fill) takes the whole window when focused, so its layout reflows like a real page. */
 function dims(b: BoardView) {
@@ -114,32 +120,53 @@ function dims(b: BoardView) {
 
 const { heights: noteH, measure: measureNotes } = useNoteHeights(viewport)
 
-const rawNotes = computed<NoteView[]>(() => {
+const noteBase = computed<NoteView[]>(() => {
   const n = cv.value?.notes ?? {}
   // Back to front: `noteOrder` when the canvas has one, else the order the notes are stored in.
   return orderedNoteIds({ notes: n, noteOrder: cv.value?.noteOrder }).map((id) => {
-    const v = n[id], o = noteOv[id] ?? {}, g = noteGeometry(v), kind = g.kind
-    return { id, kind, x: o.x ?? g.x, y: o.y ?? g.y, w: o.w ?? g.w, h: o.h ?? g.h, text: String(v.text ?? ''), fill: v.fill ?? (kind === 'sticky' ? 'yellow' : 'none'), color: v.color ?? '', size: v.size ?? 'm', bold: !!v.bold, points: o.points ?? g.points, locked: !!v.locked, group: v.group, src: v.src, fillStyle: v.fillStyle, stroke: v.stroke, strokeWidth: v.strokeWidth, strokeStyle: v.strokeStyle, roundness: v.roundness, arrowStart: v.arrowStart, arrowEnd: v.arrowEnd, bind: v.bind }
+    const v = n[id], g = noteGeometry(v), kind = g.kind
+    return { id, kind, x: g.x, y: g.y, w: g.w, h: g.h, text: String(v.text ?? ''), fill: v.fill ?? (kind === 'sticky' ? 'yellow' : 'none'), color: v.color ?? '', size: v.size ?? 'm', bold: !!v.bold, points: g.points, locked: !!v.locked, group: v.group, src: v.src, fillStyle: v.fillStyle, stroke: v.stroke, strokeWidth: v.strokeWidth, strokeStyle: v.strokeStyle, roundness: v.roundness, arrowStart: v.arrowStart, arrowEnd: v.arrowEnd, bind: v.bind }
   })
 })
+const rawNotes = computed<NoteView[]>(() => noteBase.value.map((b) => {
+  const o = noteOv[b.id]
+  return o ? { ...b, x: o.x ?? b.x, y: o.y ?? b.y, w: o.w ?? b.w, h: o.h ?? b.h, points: o.points ?? b.points } : b
+}))
 /** What an arrow can attach to: boards, rectangles, ovals, sticky notes and text, back to front. */
 const bindTargets = computed<BindTargetBox[]>(() => [
   ...boards.value.map(b => ({ type: 'board' as const, id: b.path, box: { x: b.x, y: b.y, w: b.w, h: b.h }, shape: 'rect' as const })),
   ...rawNotes.value.filter(r => ['rect', 'oval', 'sticky', 'text'].includes(r.kind)).map(r => ({ type: 'note' as const, id: r.id, box: { x: r.x, y: r.y, w: r.w, h: noteH[r.id] ?? (r.h || noteBox(r).h) }, shape: (r.kind === 'oval' ? 'oval' : 'rect') as 'oval' | 'rect' })),
 ])
 /** Bound arrows are drawn from where their targets are now (unless being dragged), so moving a target needs no operation. */
+const arrowCache = new Map<string, { r: NoteView, a: { x: number, y: number, w: number, h: number }, out: NoteView }>() // keeps an unmoved arrow's identity
 const notes = computed<NoteView[]>(() => {
   const by = new Map(bindTargets.value.map(t => [t.type + ':' + t.id, t]))
-  return rawNotes.value.map(r => (r.bind && isDirected(r.kind) && !noteOv[r.id] ? { ...r, ...resolveArrow(r, r.bind, t => by.get(t.type + ':' + t.id) ?? null) } : r))
+  return rawNotes.value.map((r) => {
+    if (!(r.bind && isDirected(r.kind) && !noteOv[r.id])) return r
+    const a = resolveArrow(r, r.bind, t => by.get(t.type + ':' + t.id) ?? null), p = arrowCache.get(r.id)
+    if (p && p.r === r && p.a.x === a.x && p.a.y === a.y && p.a.w === a.w && p.a.h === a.h) return p.out
+    const out = { ...r, ...a }
+    arrowCache.set(r.id, { r, a, out })
+    return out
+  })
 })
 
 /** Everything selectable, with its geometry as shown right now (live drag overrides included). */
+const itemCache = new WeakMap<object, GeomItem>() // a view object keeps its GeomItem while its height is unchanged
+const stable = (v: object, h: number, make: () => GeomItem) => {
+  let i = itemCache.get(v)
+  if (!i || i.h !== h) itemCache.set(v, i = make())
+  return i
+}
 const allItems = computed<GeomItem[]>(() => [
-  ...boards.value.map(b => ({ key: boardKey(b.path), kind: 'board', x: b.x, y: b.y, w: b.w, h: b.h, locked: b.locked, group: b.group })),
-  ...notes.value.map(n => ({ key: noteKey(n.id), kind: n.kind, x: n.x, y: n.y, w: n.w, h: isDirected(n.kind) ? n.h : (noteH[n.id] ?? (n.h || noteBox(n).h)), points: n.points, locked: n.locked, group: n.group })),
+  ...boards.value.map(b => stable(b, b.h, () => ({ key: boardKey(b.path), kind: 'board', x: b.x, y: b.y, w: b.w, h: b.h, locked: b.locked, group: b.group }))),
+  ...notes.value.map((n) => {
+    const h = isDirected(n.kind) ? n.h : (noteH[n.id] ?? (n.h || noteBox(n).h))
+    return stable(n, h, () => ({ key: noteKey(n.id), kind: n.kind, x: n.x, y: n.y, w: n.w, h, points: n.points, locked: n.locked, group: n.group }))
+  }),
 ])
 const selection = useCanvasSelection(allItems)
-const gestures = useCanvasGestures(selection, boardOv, noteOv, k, () => allItems.value.filter(i => !selection.has(i.key)).map(itemBox), { targets: () => bindTargets.value, bindOf: id => cv.value?.notes?.[id]?.bind })
+const gestures = useCanvasGestures(selection, boardOv, noteOv, k, () => allItems.value.filter(i => drawnSet.value.has(i.key) && !selection.has(i.key)).map(itemBox), { targets: () => bindTargets.value, bindOf: id => cv.value?.notes?.[id]?.bind })
 const selectedBoard = computed(() => selection.refs.value.find(r => r.type === 'board')?.id ?? null)
 
 // ---- view transform --------------------------------------------------------------------------
@@ -197,12 +224,61 @@ function startPresent() {
 
 const focusIndex = computed(() => boards.value.findIndex(b => b.path === focusBoard.value))
 
+// ---- which boards run a live page --------------------------------------------------------------
+/** Each live board is a whole page (often in its own process), so only boards on or near the screen get one. Focus keeps its neighbours for instant stepping. A string, so panning that changes nothing triggers nothing. */
+/** Zoomed out, boards are pictures. Two thresholds, so a zoom resting near one does not keep reloading pages. */
+const closeEnough = ref(false)
+watch(k, v => (closeEnough.value = v >= (closeEnough.value ? 0.24 : 0.3)), { immediate: true })
+/** Boards this server could not draw (no headless browser): they stay live pages. */
+const noThumb = reactive<Record<string, true>>({})
+/** Live boards whose page has loaded; until then the picture stays in view. */
+const frameLoaded = reactive<Record<string, true>>({})
+/** The screen plus half a screen around it, in world space. */
+const nearBox = computed(() => {
+  if (!size.w) return null
+  const w = size.w / k.value, h = size.h / k.value
+  return { x: -tx.value / k.value - w / 2, y: -ty.value / k.value - h / 2, w: w * 2, h: h * 2 }
+})
+const liveKey = computed(() => {
+  const list = boards.value
+  if (!isCanvas.value) return list.map(b => b.path).join('\n')
+  if (focusBoard.value) return list.filter((_, i) => Math.abs(i - focusIndex.value) <= 1).map(b => b.path).join('\n')
+  const near = nearBox.value
+  if (!near) return ''
+  return list.filter(b => b.path === interacting.value || (boxesIntersect(b, near) && (closeEnough.value || props.commentMode || noThumb[b.path]))).map(b => b.path).join('\n')
+})
+const live = computed(() => new Set(liveKey.value.split('\n').filter(Boolean)))
+/** Only what is near the screen is in the DOM (data stays complete). A string, so panning that changes nothing triggers nothing. */
+const drawnKey = computed(() => {
+  const near = nearBox.value
+  if (!isCanvas.value) return boards.value.map(b => boardKey(b.path)).join('\n')
+  if (!near) return ''
+  if (focusBoard.value) return boards.value.filter((_, i) => Math.abs(i - focusIndex.value) <= 1).map(b => boardKey(b.path)).join('\n')
+  const out: string[] = []
+  for (const i of allItems.value) {
+    const id = i.key.slice(2)
+    if (selection.has(i.key) || boxesIntersect(itemBox(i), near) || (i.kind === 'board' ? interacting.value === id || renamingBoard.value === id : !!noteOv[id] || editingNote.value === id || erased.value.includes(id))) out.push(i.key)
+  }
+  return out.join('\n')
+})
+const drawnSet = computed(() => new Set(drawnKey.value.split('\n')))
+const drawnBoards = computed(() => boards.value.filter(b => drawnSet.value.has(boardKey(b.path))))
+const drawnNotes = computed(() => notes.value.filter(n => drawnSet.value.has(noteKey(n.id))))
+watch(live, (s) => { for (const p of Object.keys(frameLoaded)) if (!s.has(p)) delete frameLoaded[p] })
+// A board that is not loaded cannot report where its comments sit: until it can, they sit where they were placed.
+watchEffect(() => {
+  for (const c of props.data.comments) {
+    const b = !c.parent_id && c.anchor?.click && c.board && !live.value.has(c.board) ? boards.value.find(x => x.path === c.board) : null
+    if (b && !pins[c.id]) pins[c.id] = { x: b.x + c.anchor!.click.x, y: b.y + c.anchor!.click.y }
+  }
+})
+
 function navKeys(enabled: boolean) {
   for (const b of boards.value) postTo(b.path, { type: 'hub:nav-keys', enabled })
 }
 
 // ---- selection ---------------------------------------------------------------------------------
-watch(() => notes.value.map(n => n.id).join(), () => nextTick(measureNotes), { flush: 'post' }) // only when the set of notes changes, not on every drag frame
+watch(() => drawnNotes.value.map(n => n.id).join(), () => nextTick(measureNotes), { flush: 'post' }) // only when the set of drawn notes changes, not on every drag frame
 watch(() => (canvasLevel.value ? selection.refs.value : []), v => emit('canvasSelect', v), { deep: true })
 // Clicking something that is in a group selects the whole group.
 const selectKey = (key: string | null) => selection.set(key ? groupKeys(allItems.value, key) : [])
@@ -511,7 +587,8 @@ const onPaste = (e: ClipboardEvent) => { pictures.onPaste(e); if (!e.defaultPrev
 // ---- laser pointer, minimap -------------------------------------------------------------------------
 const laser = ref(false)
 const mapItems = computed(() => allItems.value.map(i => ({ box: itemBox(i), board: i.kind === 'board' })))
-const showMinimap = computed(() => isCanvas.value && !focusBoard.value && contentOutside(unionBox(mapItems.value.map(i => i.box)), { tx: tx.value, ty: ty.value, k: k.value }, size))
+const contentBounds = computed(() => unionBox(mapItems.value.map(i => i.box)))
+const showMinimap = computed(() => isCanvas.value && !focusBoard.value && contentOutside(contentBounds.value, { tx: tx.value, ty: ty.value, k: k.value }, size))
 
 // ---- group and lock ---------------------------------------------------------------------------------
 const { groupSelection, ungroupSelection, toggleLock, selectionLocked, selectionGrouped } = useCanvasGrouping(selection, send, uid)
@@ -761,8 +838,40 @@ const draftPos = computed(() => {
 })
 
 const visiblePins = computed(() => props.data.comments.filter(c => !c.parent_id && pins[c.id] && (!focusBoard.value || c.board === focusBoard.value)))
-const numberOf = (c: Comment) => props.data.comments.filter(x => !x.parent_id).indexOf(c) + 1
+const numbers = computed(() => new Map(props.data.comments.filter(x => !x.parent_id).map((c, i) => [c.id, i + 1])))
 const view = computed(() => ({ tx: tx.value, ty: ty.value, k: k.value }))
+const getView = () => view.value // a function, so the minimap (not this render) tracks the pan
+// Pan/zoom is written straight to the DOM so wheel events do not re-render this component.
+const worldEl = ref<HTMLElement>()
+// The zoom-dependent bits (--ki = 1/k for counter-scaling, the % label) are written here too, so zooming does not re-render.
+const pctEl = ref<HTMLElement>()
+const titleK = computed(() => 2 ** (Math.round(Math.log2(k.value) * 4) / 4)) // coarse, so board titles re-render rarely
+let lastK = 0
+let wcTimer: ReturnType<typeof setTimeout> | undefined
+// 1/k for counter-scaled overlays: a plain variable, written onto [data-ki] elements only (not .world, which would restyle every descendant).
+let ki = 1 / k.value
+const kiNow = () => ki // not reactive on purpose: a fresh element reads the current value, mounted ones are updated by the watcher
+watch([tx, ty, k, worldEl, pctEl], () => {
+  const el = worldEl.value
+  if (el) {
+    const t = `translate(${tx.value}px, ${ty.value}px) scale(${k.value})`
+    if (t !== el.style.transform) {
+      const moving = !!el.style.transform // the first write on mount is not movement
+      el.style.transform = t
+      if (moving && k.value === lastK) { // own compositor layer only while panning: a zoom would re-raster it every step, and left on it keeps text at the old scale
+        el.style.willChange = 'transform'
+        clearTimeout(wcTimer)
+        wcTimer = setTimeout(() => { el.style.willChange = '' }, 200)
+      } else if (moving) { clearTimeout(wcTimer); el.style.willChange = '' }
+    }
+    if (k.value !== lastK) {
+      lastK = k.value; ki = 1 / k.value
+      for (const e of el.querySelectorAll<HTMLElement>('[data-ki]')) e.style.setProperty('--ki', String(ki))
+    }
+  }
+  const pct = Math.round(k.value * 100) + '%'
+  if (pctEl.value && pctEl.value.textContent !== pct) pctEl.value.textContent = pct
+}, { flush: 'sync' })
 
 const firstBoard = computed(() => boards.value[0]?.path ?? null)
 const selectedBoardPath = computed(() => selectedBoard.value)
@@ -776,11 +885,11 @@ const showHandles = computed(() => !!selBox.value && !endpointNote.value && !(se
 function hStyle(box: { x: number, y: number, w: number, h: number }, h: string) {
   const x = h.includes('w') ? box.x : h.includes('e') ? box.x + box.w : box.x + box.w / 2
   const y = h.includes('n') ? box.y : h.includes('s') ? box.y + box.h : box.y + box.h / 2
-  return { left: x + 'px', top: y + 'px', transform: `translate(-50%, -50%) scale(${1 / k.value})`, cursor: ({ nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw', n: 'ns', s: 'ns', e: 'ew', w: 'ew' } as Record<string, string>)[h] + '-resize' }
+  return { left: x + 'px', top: y + 'px', '--ki': kiNow(), transform: `translate(-50%, -50%) scale(var(--ki))`, cursor: ({ nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw', n: 'ns', s: 'ns', e: 'ew', w: 'ew' } as Record<string, string>)[h] + '-resize' }
 }
 function endpoint(n: NoteView, which: 'start' | 'end') {
   const x = which === 'start' ? n.x : n.x + n.w, y = which === 'start' ? n.y : n.y + n.h
-  return { left: x + 'px', top: y + 'px', transform: `translate(-50%, -50%) scale(${1 / k.value})`, cursor: 'move' }
+  return { left: x + 'px', top: y + 'px', '--ki': kiNow(), transform: `translate(-50%, -50%) scale(var(--ki))`, cursor: 'move' }
 }
 // (a long stroke is drawn from a thinned copy while it is being drawn, so the preview stays cheap)
 const creatingPen = computed(() => { const p = creating.value?.pts; if (!p) return ''; const st = Math.ceil(p.length / 250); return smoothPath(st > 1 ? p.filter((_, i) => i % st === 0 || i === p.length - 1) : p) })
@@ -806,6 +915,7 @@ onMounted(() => {
   viewport.value!.addEventListener('wheel', onWheel, { passive: false })
 })
 onBeforeUnmount(() => {
+  clearTimeout(wcTimer)
   ro?.disconnect()
   window.removeEventListener('message', onMessage)
   window.removeEventListener('keydown', onKey)
@@ -834,9 +944,9 @@ watch(isCanvas, () => nextTick(() => fit()))
     @drop="onDrop"
     @contextmenu="onContextMenu"
   >
-    <div class="world" :class="{ anim: animate }" :style="{ transform: `translate(${tx}px, ${ty}px) scale(${k})` }">
+    <div ref="worldEl" class="world" :class="{ anim: animate }">
       <div
-        v-for="b in boards"
+        v-for="b in drawnBoards"
         :key="b.path"
         data-board
         :data-path="b.path"
@@ -845,16 +955,19 @@ watch(isCanvas, () => nextTick(() => fit()))
         :style="{ left: b.x + 'px', top: b.y + 'px', width: dims(b).w + 'px', height: dims(b).h + 'px', visibility: focusBoard && focusBoard !== b.path ? 'hidden' : 'visible' }"
       >
         <CanvasBoardTitle
-          v-if="isCanvas && !focusBoard" :board="b" :k="k" :can-edit="canvasLevel" :renaming="renamingBoard === b.path" :drawing="creationTool"
+          v-if="isCanvas && !focusBoard" :board="b" :k="titleK" :ki-now="kiNow" :can-edit="canvasLevel" :renaming="renamingBoard === b.path" :drawing="creationTool"
           @rename="startRename(b)" @commit="(v) => commitRename(b, v)" @tweaks="emit('openTweaks', b.path)" @export="emit('exportBoard', b.path)" @focus="enterFocus(b.path)" @play="emit('play', b.path)"
         />
+        <img v-if="isCanvas && !noThumb[b.path] && !frameLoaded[b.path]" data-thumb class="thumb" :src="data.thumbBase + encodeURIComponent(b.path)" alt="" loading="lazy" decoding="async" draggable="false" @error="noThumb[b.path] = true">
         <iframe
+          v-if="live.has(b.path)"
           :ref="(el) => { if (el) frames.set(b.path, el as HTMLIFrameElement); else frames.delete(b.path) }"
           :src="b.src"
           :title="b.title || 'Artifact'"
           sandbox="allow-scripts allow-popups allow-forms allow-downloads allow-modals"
           referrerpolicy="no-referrer"
-          :style="{ pointerEvents: !isCanvas || commentMode || elementLevel(b.path) || interacting === b.path || focusBoard === b.path ? 'auto' : 'none' }"
+          :style="{ visibility: isCanvas && !frameLoaded[b.path] && !noThumb[b.path] ? 'hidden' : 'inherit', pointerEvents: !isCanvas || commentMode || elementLevel(b.path) || interacting === b.path || focusBoard === b.path ? 'auto' : 'none' }"
+          @load="frameLoaded[b.path] = true"
         />
         <div
           v-if="isCanvas && !commentMode && interacting !== b.path && focusBoard !== b.path"
@@ -869,27 +982,27 @@ watch(isCanvas, () => nextTick(() => fit()))
 
       <!-- notes and shapes sit above the boards -->
       <CanvasNote
-        v-for="n in notes" :key="n.id" :n="n" :selected="selection.has(noteKey(n.id))" :editable="canvasLevel" :editing="editingNote === n.id" :hidden="!!focusBoard" :erasing="erased.includes(n.id)" :image-src="imageUrl(n)"
+        v-for="n in drawnNotes" :key="n.id" :n="n" :selected="selection.has(noteKey(n.id))" :editable="canvasLevel" :editing="editingNote === n.id" :hidden="!!focusBoard" :erasing="erased.includes(n.id)" :image-src="imageUrl(n)"
         @down="onNoteDown($event, n)" @edit="startNoteEdit(n)" @commit="(text) => commitNoteEdit(n, text)"
       />
 
       <!-- selection frame and resize handles (canvas level) -->
       <template v-if="selBox && !editingNote">
-        <div class="selbox" :style="{ left: selBox.x + 'px', top: selBox.y + 'px', width: selBox.w + 'px', height: selBox.h + 'px', borderWidth: 2 / k + 'px' }" />
-        <Lock v-if="selectionLocked" class="lock-badge" aria-label="Locked" :style="{ left: selBox.x + selBox.w + 'px', top: selBox.y + 'px', transform: `translate(-100%, -120%) scale(${1 / k})` }" />
+        <div class="selbox" data-ki :style="{ '--ki': kiNow(), left: selBox.x + 'px', top: selBox.y + 'px', width: selBox.w + 'px', height: selBox.h + 'px', borderWidth: 'calc(2px * var(--ki))' }" />
+        <Lock v-if="selectionLocked" class="lock-badge" aria-label="Locked" data-ki :style="{ '--ki': kiNow(), left: selBox.x + selBox.w + 'px', top: selBox.y + 'px', transform: `translate(-100%, -120%) scale(var(--ki))` }" />
         <template v-if="endpointNote">
-          <span data-handle class="hd" :style="endpoint(endpointNote, 'start')" @pointerdown.stop="gestures.startEndpoint($event, endpointNote, 'start')" />
-          <span data-handle class="hd" :style="endpoint(endpointNote, 'end')" @pointerdown.stop="gestures.startEndpoint($event, endpointNote, 'end')" />
+          <span data-handle class="hd" data-ki :style="endpoint(endpointNote, 'start')" @pointerdown.stop="gestures.startEndpoint($event, endpointNote, 'start')" />
+          <span data-handle class="hd" data-ki :style="endpoint(endpointNote, 'end')" @pointerdown.stop="gestures.startEndpoint($event, endpointNote, 'end')" />
         </template>
         <template v-else-if="showHandles">
-          <span v-for="h in HANDLES" :key="h" data-handle class="hd" :style="hStyle(selBox, h)" @pointerdown.stop="gestures.startResize($event, h)" />
+          <span v-for="h in HANDLES" :key="h" data-handle class="hd" data-ki :style="hStyle(selBox, h)" @pointerdown.stop="gestures.startResize($event, h)" />
         </template>
       </template>
 
       <!-- snapping guides and the selection rectangle -->
-      <div v-for="(g, i) in gestures.guides.value" :key="'g' + i" class="guide" :style="g.axis === 'x' ? { left: g.pos + 'px', top: g.from + 'px', width: 1 / k + 'px', height: g.to - g.from + 'px' } : { top: g.pos + 'px', left: g.from + 'px', height: 1 / k + 'px', width: g.to - g.from + 'px' }" />
-      <div v-if="gestures.bindHint.value" class="bind-hl" :style="{ left: gestures.bindHint.value.box.x - 4 + 'px', top: gestures.bindHint.value.box.y - 4 + 'px', width: gestures.bindHint.value.box.w + 8 + 'px', height: gestures.bindHint.value.box.h + 8 + 'px', borderWidth: 2 / k + 'px' }" />
-      <div v-if="marquee" class="marquee" :style="{ left: marquee.x + 'px', top: marquee.y + 'px', width: marquee.w + 'px', height: marquee.h + 'px', borderWidth: 1 / k + 'px' }" />
+      <div v-for="(g, i) in gestures.guides.value" :key="'g' + i" class="guide" data-ki :style="g.axis === 'x' ? { '--ki': kiNow(), left: g.pos + 'px', top: g.from + 'px', width: 'calc(1px * var(--ki))', height: g.to - g.from + 'px' } : { '--ki': kiNow(), top: g.pos + 'px', left: g.from + 'px', height: 'calc(1px * var(--ki))', width: g.to - g.from + 'px' }" />
+      <div v-if="gestures.bindHint.value" class="bind-hl" data-ki :style="{ '--ki': kiNow(), left: gestures.bindHint.value.box.x - 4 + 'px', top: gestures.bindHint.value.box.y - 4 + 'px', width: gestures.bindHint.value.box.w + 8 + 'px', height: gestures.bindHint.value.box.h + 8 + 'px', borderWidth: 'calc(2px * var(--ki))' }" />
+      <div v-if="marquee" class="marquee" data-ki :style="{ '--ki': kiNow(), left: marquee.x + 'px', top: marquee.y + 'px', width: marquee.w + 'px', height: marquee.h + 'px', borderWidth: 'calc(1px * var(--ki))' }" />
 
       <!-- shape being drawn -->
       <template v-if="creating && inCanvasPage">
@@ -904,23 +1017,24 @@ watch(isCanvas, () => nextTick(() => fit()))
         variant="ghost"
         :key="c.id"
         class="pin"
+        data-ki
         :class="{ selected: selectedId === c.id, resolved: c.resolved }"
-        :style="{ left: pins[c.id]!.x + 'px', top: pins[c.id]!.y + 'px', transform: `translate(-50%, -100%) scale(${1 / k})` }"
-        :aria-label="`Open comment ${numberOf(c)} by ${c.author_email}`"
+        :style="{ '--ki': kiNow(), left: pins[c.id]!.x + 'px', top: pins[c.id]!.y + 'px', transform: `translate(-50%, -100%) scale(var(--ki))` }"
+        :aria-label="`Open comment ${numbers.get(c.id)} by ${c.author_email}`"
         @click.stop="emit('select', c.id)"
       >
-        <span>{{ numberOf(c) }}</span>
+        <span>{{ numbers.get(c.id) }}</span>
       </Button>
-      <span v-if="draftPos" class="pin draft" :style="{ left: draftPos.x + 'px', top: draftPos.y + 'px', transform: `translate(-50%, -100%) scale(${1 / k})` }"><span>+</span></span>
+      <span v-if="draftPos" class="pin draft" data-ki :style="{ '--ki': kiNow(), left: draftPos.x + 'px', top: draftPos.y + 'px', transform: `translate(-50%, -100%) scale(var(--ki))` }"><span>+</span></span>
     </div>
 
-    <CanvasMinimap v-if="showMinimap" :items="mapItems" :view="{ tx, ty, k }" :size="size" @jump="(x, y) => centerOn(x, y)" />
+    <CanvasMinimap v-if="showMinimap" :items="mapItems" :get-view="getView" :size="size" @jump="(x, y) => centerOn(x, y)" />
     <LaserOverlay v-if="laser && focusBoard" />
     <ButtonGroup v-if="isCanvas && !focusBoard" class="zoom rounded-lg border bg-card shadow-md" data-ui>
       <Button v-if="canvasLevel" variant="ghost" size="icon-sm" aria-label="Command palette" title="Command palette (Ctrl K)" @click="emit('palette')"><Command /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Present" title="Present the whole canvas" @click="emit('present')"><Play class="size-3 fill-current" /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Zoom out" @click="zoomAt(1 / 1.2)"><Minus /></Button>
-      <Button class="pct tabular-nums" variant="ghost" size="sm" title="Fit all (0)" @click="fit(true)">{{ Math.round(k * 100) }}%</Button>
+      <Button class="pct tabular-nums" variant="ghost" size="sm" title="Fit all (0)" @click="fit(true)"><span ref="pctEl" /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Zoom in" @click="zoomAt(1.2)"><Plus /></Button>
     </ButtonGroup>
 
@@ -957,7 +1071,7 @@ watch(isCanvas, () => nextTick(() => fit()))
 .board.interacting { box-shadow: 0 0 0 2px var(--brand), 0 8px 28px rgb(0 0 0 / .14); }
 .board.full { box-shadow: none; border-radius: 0; }
 .canvas.page .board { box-shadow: none; border-radius: 0; }
-.board iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+.board iframe, .board .thumb { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
 .board-shield { position: absolute; inset: 0; cursor: inherit; }
 .board-shield.movable { cursor: move; }
 .canvas.tool .board-shield { cursor: crosshair; }
@@ -972,7 +1086,7 @@ watch(isCanvas, () => nextTick(() => fit()))
 .draw.oval { border-radius: 50%; }
 .draw.artboard { background: rgba(255, 255, 255, .6); }
 .draw-svg { position: absolute; pointer-events: none; }
-.pin { position: absolute; transform-origin: 50% 100%; width: 28px; height: 28px; border-radius: 50% 50% 50% 0; background: var(--brand); color: #fff; border: 2px solid #fff; box-shadow: 0 2px 8px rgb(0 0 0 / .3); font: 600 12px/1 var(--font); display: grid; place-items: center; cursor: pointer; padding: 0; rotate: -45deg; }
+.pin { position: absolute; transform-origin: 50% 100%; width: 28px; height: 28px; border-radius: 50% 50% 50% 0; background: var(--brand); color: #fff; border: 2px solid #fff; box-shadow: 0 2px 8px rgb(0 0 0 / .3); font: 600 12px/1 var(--font); display: grid; place-items: center; cursor: pointer; padding: 0; rotate: -45deg; transition: none; }
 .pin > span { rotate: 45deg; }
 .pin.selected { background: var(--fg); outline: 3px solid var(--brand); }
 .pin.resolved { background: #8a8f98; opacity: .7; }
