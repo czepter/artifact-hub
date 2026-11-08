@@ -8,6 +8,8 @@ import {
 import { onArtifact } from './bus'
 import { registerRenderTool } from './render/tool'
 import { requireOwner } from './auth'
+import { deleteSharedFile, listSharedFiles, putSharedFile, readServedFile, readSharedFile, shareArtifactFiles, cleanSharedPath, sharedRev, SHARED_PREFIX } from './sharedFiles'
+import { transferBoards } from './transfer'
 import { createWorkspace, deleteWorkspace, getWorkspaceOf, listWorkspaces, moveArtifact, resolveWorkspaceId, updateWorkspace } from './workspaces'
 
 const GUIDE = `# Artifact Hub: how to publish
@@ -37,6 +39,24 @@ Publish \`canvas.json\` plus one HTML file per board:
 - Each board is an HTML file (full document or fragment), self-contained or using relative assets.
 - is_interactive: false boards are static previews until the viewer double-clicks into them.
 - Edit one board or canvas.json with edit_file instead of republishing everything.
+
+## Shared files (tokens, components, patterns across boards)
+Every workspace has a library of shared files that all of its artifacts and boards can use. A board links a library file as
+\`_shared/<path>\` relative to the artifact root: \`<link rel="stylesheet" href="_shared/tokens.css">\` (from a board in a subfolder
+use \`../_shared/tokens.css\`; inside \`_shared/css/a.css\` an \`@import\` of a sibling is relative too). It is a live link, not a copy: edit the file
+once with write_shared_files and every board that uses it changes (open viewers reload). Good candidates: design tokens as css custom properties,
+component styles (buttons, cards, nav), small scripts, fonts, logos.
+- list_shared_files / read_shared_file: see what exists before you write your own copy of a style.
+- write_shared_files: create, replace or remove library files. share_file: promote files you already published in an artifact into its workspace's library.
+- Rules: an artifact cannot publish its own files under \`_shared/\`; a library file lives in exactly one workspace, so moving an artifact to another workspace
+  breaks its \`_shared/\` links unless that workspace has the same files. read_file on an artifact also reads \`_shared/…\` paths.
+- Prefer one tokens file (\`_shared/tokens.css\`) that other shared css builds on, so a re-theme is a one-file change.
+
+## Moving boards between artifacts
+transfer_boards copies (or moves) boards from one artifact into another: pass \`id\` (source), \`target\`, optional \`boards\` (paths; omit for the whole canvas, notes
+included) and \`mode\` copy|move. The boards' stylesheets, scripts, images and linked pages come along, boards keep their relative layout and land to the right of the
+target's boards, taken names get a free one, and nothing existing in the target is overwritten (differing dependency files are kept as they are and reported in \`warnings\`).
+Use shared files (above) for what both artifacts should keep in sync; a move leaves comments behind on the source.
 
 ## Interactivity: window.artifact
 Every HTML page gets \`window.artifact\` (not available when the file is opened outside the viewer):
@@ -83,9 +103,9 @@ const fileSchema = z.object({
 })
 
 const TOOL_SCOPE: Record<string, string> = {
-  guide: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', read_comment_attachment: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
+  guide: 'read', list_shared_files: 'read', read_shared_file: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', read_comment_attachment: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
   reply_comment: 'comment', resolve_comment: 'comment',
-  create_artifact: 'write', create_workspace: 'write', update_workspace: 'write', delete_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
+  write_shared_files: 'write', transfer_boards: 'write', share_file: 'write', create_artifact: 'write', create_workspace: 'write', update_workspace: 'write', delete_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
   share_link: 'share',
 }
 
@@ -152,16 +172,54 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     const canvas = readFile(id, v, 'canvas.json')?.content.toString('utf8')
     return text({
       id: a.id, title: a.title, workspace: getWorkspaceOf(a.id), live_version: a.current_version, version: v, url: `${origin}/a/${a.id}`,
-      files: listFiles(id, v), versions: listVersions(id), canvas_json: canvas ?? null,
+      files: listFiles(id, v), shared_files: listSharedFiles(a.workspace_id).map(f => ({ ref: f.ref, size: f.size, content_type: f.contentType })), versions: listVersions(id), canvas_json: canvas ?? null,
     })
   })
 
+  server.registerTool('list_shared_files', {
+    description: 'List the shared files of a workspace (id or name; default workspace if omitted): the library every artifact in it can link as `_shared/<path>`.',
+    inputSchema: { workspace: z.string().optional() },
+  }, ({ workspace }) => {
+    const ws = resolveWorkspaceId(workspace)
+    return text({ workspace_id: ws, rev: sharedRev(ws), files: listSharedFiles(ws).map(f => ({ ref: f.ref, path: f.path, size: f.size, content_type: f.contentType, updated_at: f.updatedAt, updated_by: f.updatedBy })) })
+  })
+
+  server.registerTool('read_shared_file', {
+    description: 'Read one text shared file of a workspace.',
+    inputSchema: { workspace: z.string().optional(), path: z.string().describe('With or without the `_shared/` prefix') },
+  }, ({ workspace, path }) => {
+    const f = readSharedFile(resolveWorkspaceId(workspace), cleanSharedPath(path))
+    if (!f) throw new Error(`No such shared file: ${path}`)
+    if (!/^(text\/|application\/json|image\/svg)/.test(f.contentType)) return text(`(${f.contentType}, ${f.content.length} bytes, not shown)`)
+    return text(f.content.toString('utf8'))
+  })
+
+  server.registerTool('write_shared_files', {
+    description: 'Create or replace shared files of a workspace, and/or remove some. Boards linking `_shared/<path>` change immediately; removing a file breaks the boards that still link it.',
+    inputSchema: { workspace: z.string().optional(), files: z.array(fileSchema).default([]), remove: z.array(z.string()).optional() },
+  }, ({ workspace, files, remove }) => {
+    const ws = resolveWorkspaceId(workspace)
+    const written = files.map(f => putSharedFile(ws, f.path, Buffer.from(f.content, f.encoding === 'base64' ? 'base64' : 'utf8'), 'claude').ref)
+    for (const p of remove ?? []) deleteSharedFile(ws, p)
+    return text({ ok: true, written, removed: (remove ?? []).map(p => SHARED_PREFIX + cleanSharedPath(p)) })
+  })
+
+  server.registerTool('share_file', {
+    description: 'Copy files of an artifact\'s live version into its workspace\'s shared files (`as` renames). The artifact keeps its own copy: edit the boards to link `_shared/<path>` instead.',
+    inputSchema: { id: z.string(), files: z.array(z.object({ path: z.string(), as: z.string().optional() })).min(1).max(50) },
+  }, ({ id, files }) => text({ shared: shareArtifactFiles(id, files, 'claude').map(f => f.ref) }))
+
+  server.registerTool('transfer_boards', {
+    description: 'Copy or move boards from one artifact to another (the whole canvas with its notes when `boards` is omitted). Dependencies (css, js, images, linked pages) travel along; nothing in the target is overwritten. Returns the new paths and any warnings.',
+    inputSchema: { id: z.string().describe('Source artifact'), target: z.string().describe('Target artifact id'), boards: z.array(z.string()).optional().describe('Board paths from canvas.json; omit for all'), mode: z.enum(['copy', 'move']).default('copy') },
+  }, ({ id, target, boards, mode }) => text(transferBoards({ sourceId: id, targetId: target, boards, mode })))
+
   server.registerTool('read_file', {
-    description: 'Read one text file of an artifact.',
+    description: 'Read one text file of an artifact. `_shared/<path>` reads a shared file of the artifact\'s workspace.',
     inputSchema: { id: z.string(), path: z.string(), version: z.number().int().optional() },
   }, ({ id, path, version }) => {
     const a = requireArtifact(id)
-    const f = readFile(id, version ?? a.current_version, path)
+    const f = readServedFile(id, version ?? a.current_version, path)
     if (!f) throw new Error(`No such file: ${path}`)
     if (!/^(text\/|application\/json|image\/svg)/.test(f.contentType)) return text(`(${f.contentType}, ${f.content.length} bytes, not shown)`)
     return text(f.content.toString('utf8'))

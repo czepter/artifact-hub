@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto'
 import { useDb } from '../db'
 import { listFiles, readFile } from '../store'
+import { sharedRevOfArtifact } from '../sharedFiles'
 import { htmlRendererAvailable, shootBoards } from './browser'
 
 const SCALE = 0.5
@@ -16,13 +17,13 @@ function boardsOf(id: string, version: number): Record<string, any> | null {
   try { return JSON.parse(raw.content.toString('utf8'))?.boards ?? null } catch { return null }
 }
 
-/** What a board's picture depends on: its own file, the shared assets (css, js, images), its size and tweaks. Moving a board or editing another one changes nothing. */
+/** What a board's picture depends on: its own file, the shared assets (css, js, images, the workspace's shared files), its size and tweaks. Moving a board or editing another one changes nothing. */
 export function thumbInfo(id: string, version: number, path: string, files = listFiles(id, version), boards = boardsOf(id, version)): ThumbInfo | null {
   const b = boards?.[path], own = files.find(f => f.path === path)
   if (!b || !own) return null
   const assets = Math.max(0, ...files.filter(f => !f.content_type.startsWith('text/html') && f.path !== 'canvas.json').map(f => f.rev))
   const w = Math.round(+b.w || 800), h = Math.round(+b.h || 600)
-  return { key: createHash('sha1').update(JSON.stringify([own.rev, assets, w, h, b.tweaks ?? null])).digest('base64url').slice(0, 16), w, h, tweaks: b.tweaks }
+  return { key: createHash('sha1').update(JSON.stringify([own.rev, assets, sharedRevOfArtifact(id), w, h, b.tweaks ?? null])).digest('base64url').slice(0, 16), w, h, tweaks: b.tweaks }
 }
 
 // One at a time: a canvas asks for every board at once, and each picture is a browser page on this server.

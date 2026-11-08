@@ -1,4 +1,5 @@
 import { resolveAccess, signFrameToken } from '../../utils/auth'
+import { sharedRevOfArtifact } from '../../utils/sharedFiles'
 import { listComments, listFiles, listVersions, readFile, requireArtifact } from '../../utils/store'
 
 export interface Board { x: number, y: number, w: number, h: number, title?: string, expand?: string, is_interactive?: boolean }
@@ -25,6 +26,7 @@ export default defineEventHandler((event) => {
     email: access.email,
     canvas,
     files: files.map(f => ({ path: f.path, rev: f.rev })),
+    sharedRev: sharedRevOfArtifact(artifact.id),
     frameBase: `/f/${ref}@${version}/`,
     thumbBase: `/api/view/${access.shareToken ?? artifact.id}/thumb?v=${version}&path=`,
     comments: listComments(artifact.id),

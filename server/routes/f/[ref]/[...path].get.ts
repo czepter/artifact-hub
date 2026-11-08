@@ -1,5 +1,6 @@
 import { resolveFrameAccess } from '../../../utils/auth'
 import { cleanPath, getArtifact, readFile } from '../../../utils/store'
+import { readServedFile } from '../../../utils/sharedFiles'
 import { FRAME_HEADERS, instrumentHtml } from '../../../utils/frame'
 import { dcSupportJs } from '../../../utils/dc'
 import { annotate } from '../../../utils/htmlEdit'
@@ -13,7 +14,7 @@ export default defineEventHandler(async (event) => {
   if (!artifact) throw createError({ statusCode: 404, statusMessage: 'Not found' })
   const version = ver && /^\d+$/.test(ver) ? Number(ver) : artifact.current_version
   const path = cleanPath(getRouterParam(event, 'path') || 'index.html')
-  let file = readFile(artifactId, version, path)
+  let file = readServedFile(artifactId, version, path) // `_shared/…` comes from the workspace's shared files
   // `./support.js` is the Design Component runtime. Boards from Claude's Design export reference it by that name;
   // we always answer with our own implementation (never a copy of someone else's runtime shipped inside an import).
   if (/(^|\/)support\.js$/.test(path) && (!file || file.content.toString('utf8', 0, 400_000).includes('DCLogic'))) {

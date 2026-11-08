@@ -56,6 +56,7 @@ const emit = defineEmits<{
   present: []
   openTweaks: [path: string]
   exportBoard: [path: string]
+  transferBoard: [path: string, mode: 'copy' | 'move']
 }>()
 
 interface BoardView { group?: string, path: string, x: number, y: number, w: number, h: number, title: string, interactive: boolean, expand: string, src: string, locked: boolean }
@@ -94,7 +95,7 @@ const elementLevel = (path: string) => props.editMode && (!isCanvas.value || foc
 
 const boardBase = computed<BoardView[]>(() => {
   const c = cv.value
-  const live = (p: string) => `${props.data.frameBase}${p.split('/').map(encodeURIComponent).join('/')}?r=${revOf.value[p] ?? 0}`
+  const live = (p: string) => `${props.data.frameBase}${p.split('/').map(encodeURIComponent).join('/')}?r=${revOf.value[p] ?? 0}&s=${props.data.sharedRev ?? 0}`
   const src = (p: string) => frozenSrc.value?.[p] ?? live(p)
   if (c?.boards) {
     const order: string[] = Array.isArray(c.order) ? c.order : Object.keys(c.boards)
@@ -797,7 +798,7 @@ watch(boards, (list) => {
 function reloadBoard(path: string) {
   const b = boards.value.find(b => b.path === path)
   if (!b) return
-  const fresh = `${props.data.frameBase}${path.split('/').map(encodeURIComponent).join('/')}?r=${revOf.value[path] ?? 0}&k=${Date.now()}`
+  const fresh = `${props.data.frameBase}${path.split('/').map(encodeURIComponent).join('/')}?r=${revOf.value[path] ?? 0}&s=${props.data.sharedRev ?? 0}&k=${Date.now()}`
   if (frozenSrc.value) frozenSrc.value = { ...frozenSrc.value, [path]: fresh }
 }
 
@@ -1050,7 +1051,7 @@ watch(isCanvas, () => nextTick(() => fit()))
   <CanvasContextMenu
     :type="ctx.type" :id="ctx.id" :canvas-level="canvasLevel" :has-clip="board_.hasClip.value" :locked="selectionLocked" :grouped="selectionGrouped" :can-group="selection.count.value > 1"
     @play="ctxBoard && emit('play', ctxBoard.path)" @focus="ctxBoard && enterFocus(ctxBoard.path)" @tweaks="ctxBoard && emit('openTweaks', ctxBoard.path)" @export="ctxBoard && emit('exportBoard', ctxBoard.path)"
-    @lock="toggleLock" @group="groupSelection" @ungroup="ungroupSelection" @duplicate="board_.duplicate" @rename="ctxBoard && startRename(ctxBoard)" @delete-board="deleteSelection" @copy="board_.copy" @delete-note="deleteSelection"
+    @lock="toggleLock" @group="groupSelection" @ungroup="ungroupSelection" @duplicate="board_.duplicate" @rename="ctxBoard && startRename(ctxBoard)" @delete-board="deleteSelection" @transfer="(m) => ctxBoard && emit('transferBoard', ctxBoard.path, m)" @copy="board_.copy" @delete-note="deleteSelection"
     @reorder="board_.reorder" @add-board="ctxAddBoard" @add-sticky="ctxAddSticky" @paste="board_.pasteAt(ctx)" @fit="fit(true)" @zoom="zoomAt" @present="emit('present')"
   />
   </ContextMenu>

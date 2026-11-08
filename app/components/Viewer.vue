@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X, ArrowLeft, Check, ChevronDown, Copy, Download, ImageIcon, MessageSquare, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2 } from '@lucide/vue'
+import { X, ArrowLeft, Check, ChevronDown, Copy, Download, ImageIcon, MessageSquare, PanelRight, Pencil, Pin, Play, RefreshCw, Share2, Trash2, Library, ArrowRightLeft } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -648,6 +648,13 @@ function exportZip() {
 }
 // ---- image export (owner): the dialog lives in RenderDialog.vue ---------------------------------
 const renderOpen = ref(false)
+const shareFilesOpen = ref(false)
+// Copy or move boards (or the whole canvas, `boards` empty) into another artifact.
+const transfer = ref<{ boards: string[], mode: 'copy' | 'move' } | null>(null)
+function openTransfer(path?: string, mode: 'copy' | 'move' = 'copy') { menuOpen.value = false; transfer.value = { boards: path ? [path] : [], mode } }
+function openShareFiles() { menuOpen.value = false; shareFilesOpen.value = true }
+const { list: workspaceList } = useWorkspaces()
+const workspaceName = computed(() => workspaceList.value.find(w => w.id === data.value?.artifact.workspaceId)?.name ?? 'this workspace')
 function openRender() { menuOpen.value = false; renderOpen.value = true }
 async function refresh() { menuOpen.value = false; await load() }
 const deleteOpen = ref(false)
@@ -752,6 +759,8 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
             <DropdownMenuItem @select="startRename"><Pencil />Rename</DropdownMenuItem>
             <DropdownMenuItem @select="togglePin"><Pin />{{ data.artifact.pinned ? 'Unpin' : 'Pin to top' }}</DropdownMenuItem>
             <WorkspaceMoveMenu :current="data.artifact.workspaceId" @move="moveTo" />
+            <DropdownMenuItem @select="openShareFiles"><Library />Share files with workspace…</DropdownMenuItem>
+            <DropdownMenuItem v-if="hasBoards" @select="openTransfer()"><ArrowRightLeft />Copy or move canvas…</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem @select="refresh"><RefreshCw />Refresh</DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -839,6 +848,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         @present="present"
         @open-tweaks="onOpenTweaks"
         @export-board="exportBoard"
+        @transfer-board="openTransfer"
         @pins-changed="(s) => Object.assign(located, s)"
       />
       <CanvasToolbar v-if="editMode && hasBoards && !canvasRef?.focusBoard && !presenting" v-model:tool="tool" :tool-lock="toolLock" @tool-lock="(l) => (toolLock = l)" />
@@ -939,6 +949,12 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
     </aside>
   </div>
 
+  <TransferBoardsDialog
+    v-if="data && transfer" :open="true" :artifact-id="data.artifact.id" :boards="transfer.boards" :mode="transfer.mode"
+    :titles="Object.fromEntries(Object.entries(data.canvas?.boards ?? {}).map(([p, b]: [string, any]) => [p, b?.title || p]))"
+    @update:open="(o: boolean) => { if (!o) transfer = null }" @done="(r: { mode: string }) => { if (r.mode === 'move') void load() }"
+  />
+  <ShareFilesDialog v-if="data && shareFilesOpen" v-model:open="shareFilesOpen" :artifact-id="data.artifact.id" :workspace-name="workspaceName" :files="textFiles" />
   <RenderDialog v-if="data && renderOpen" v-model:open="renderOpen" :artifact-id="data.artifact.id" :version="data.artifact.version" :boards="Object.entries(data.canvas?.boards ?? {}).map(([path, b]: [string, any]) => ({ path, title: b?.title || path }))" />
   <AlertDialog v-if="data" v-model:open="deleteOpen">
     <AlertDialogContent>

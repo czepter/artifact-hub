@@ -47,8 +47,33 @@ existing artifacts migrate into an auto-created default workspace ("General", id
   `PATCH /api/artifacts/:id {workspaceId}` moves one.
 - UI: workspace switcher in the header pill, filter and edit/delete on **Artifacts**, "Move to workspace" in each row's menu and the viewer's title menu.
 - Extension point: `workspaces.settings` is a JSON column, all logic is in `server/utils/workspaces.ts` (`getSettings`/`patchSettings`).
-  Per-workspace design tokens and a component library are meant to hang off it (or off tables keyed by `workspace_id`); neither exists yet.
+  Shared files (below) are the first thing built on it; design-token editing and a component registry can follow.
 - Test: `node tests/workspaces-test.mjs` against `PORT=3111 npm run dev:login`.
+
+### Shared files (tokens, component styles, scripts, images across boards)
+Each workspace has a library of files that every artifact, and so every board, in it can use. A board links a library file as
+`_shared/<path>` relative to the artifact root, e.g. `<link rel="stylesheet" href="_shared/css/tokens.css">` (from a board in a
+subfolder: `../_shared/css/tokens.css`). It is a **live link, not a copy**: saving the file updates every board that uses it, in open viewers
+too (frames reload, board pictures are redrawn, server renders and the headless renderer see it as well).
+- Scope: one workspace. Boards of another workspace get a 404 for the same path, so moving an artifact to a workspace without the file breaks its links.
+  `_shared/` is reserved: an artifact cannot publish files under it. Limits: 5 MB per file, 200 files, 20 MB per workspace.
+- `GET /api/workspaces/:id/files` (members; `:id` may be a name), `GET|PUT|DELETE /api/workspaces/:id/files/<path>` (read text source / create or replace
+  `{content, encoding?}` / remove; PUT and DELETE need an editor), `POST /api/artifacts/:id/share-file {files:[{path, as?}]}` copies files of an artifact into its workspace's library.
+- MCP: `list_shared_files`, `read_shared_file` (read), `write_shared_files`, `share_file` (write). `read_file` also reads `_shared/…` paths and `get_artifact` lists `shared_files`.
+- UI: **Shared files…** in the workspace menu on **Artifacts** (list, new file, upload, edit, delete, copy the link tag); **Share files with workspace…** in an artifact's title menu promotes its css/js/fonts/images.
+- The `.zip` export includes the shared files the artifact actually references (following references between shared files).
+- Test: `node tests/shared-files-test.mjs` against `PORT=3111 npm run dev:login`.
+
+### Copy or move boards between artifacts
+`POST /api/artifacts/:id/transfer-boards {target, boards?, mode?: 'copy' | 'move'}` (editors; MCP: `transfer_boards`). `boards` are paths from `canvas.json`; omit it for the whole
+canvas, which also brings the notes (stickies, shapes, arrows with their bindings, pictures). A plain single-page artifact counts as a canvas of one board, in the source and in the target.
+- Travels along: the board HTML, its canvas entry (title, size, tweaks), and every local file it needs: stylesheets (also through `@import` and `url()`), scripts, images, fonts, other pages it links.
+  Boards keep their layout relative to each other and are placed to the right of the target's boards. Group ids are renewed.
+- Never overwrites: a taken board path gets a free name (`home-2.html`; links between the transferred boards are updated); a dependency that exists in the target with different bytes stays as the target has it and is reported in `warnings`
+  (put it in the workspace's shared files to have one version for both). Links to boards that were not transferred, and `_shared/…` files the target's workspace lacks, are reported too.
+- Move = copy, then remove the boards (and, for the whole canvas, the notes) from the source. Their dependency files stay (other boards may use them) and comments stay with the source. A single page cannot be moved, only copied.
+- UI: board right-click menu (**Copy to artifact…** / **Move to artifact…**) and **Copy or move canvas…** in the artifact's title menu.
+- Test: `node tests/transfer-test.mjs` against `PORT=3111 npm run dev:login`.
 
 
 ## Rendering (PNG, SVG, WebP, JPEG, XML)
