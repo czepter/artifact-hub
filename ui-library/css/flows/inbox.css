@@ -1,0 +1,18 @@
+/* Inbox: the review loop first. Threads that wait for an answer are the top region of the dashboard, with the reply field in place. */
+.inbox-item { display: grid; gap: 8px; padding: 14px 16px; }
+.inbox-item + .inbox-item { border-top: 1px solid var(--border); }
+.inbox-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: var(--text-xs); color: var(--muted-foreground); }
+.inbox-head strong { font-weight: var(--w-label); color: var(--foreground); }
+.inbox-body { margin: 0; font-size: var(--text-sm); max-width: 72ch; }
+.inbox-ref { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--muted-foreground); }
+.inbox-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.inbox-reply { display: flex; flex: 1 1 280px; gap: 8px; min-width: 0; }
+.inbox-reply .ui-input { flex: 1; }
+.inbox-item[data-open] { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+.inbox-item[data-open] .inbox-body { font-weight: var(--w-label); }
+.inbox-thread { display: grid; gap: 2px; padding-left: 12px; margin-left: 2px; border-left: 1px solid var(--border); font-size: var(--text-xs); color: var(--muted-foreground); }
+/* compact artifact cards: three across, small preview */
+.cards-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cards-compact .thumb { aspect-ratio: 16 / 6; padding: 10px 14px; }
+.cards-compact .card-body { padding: 10px 12px; gap: 4px; }
+@media (max-width: 800px) { .cards-compact { grid-template-columns: minmax(0, 1fr); } .cards-compact .thumb { display: none; } .inbox-reply { flex-basis: 100%; } }

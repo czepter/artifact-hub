@@ -1,0 +1,14 @@
+/* View toggle: cards and list show the same artifacts with the same badges. */
+.views { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-lg); background: var(--muted); }
+.views .mode { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: var(--radius-md); background: transparent; font-size: var(--text-sm); font-weight: var(--w-label); color: var(--muted-foreground); cursor: pointer; transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.views .mode:hover:not([aria-pressed="true"]) { color: var(--foreground); }
+.views .mode[aria-pressed="true"] { background: var(--background); color: var(--foreground); box-shadow: var(--shadow-sm); }
+.artifact-cards { padding: 12px; margin: 0; list-style: none; display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.artifact-cards .thumb { aspect-ratio: 16 / 6; padding: 10px 14px; }
+.artifact-cards > li { position: relative; }
+.card-more { position: absolute; top: 6px; right: 6px; z-index: 1; background: color-mix(in srgb, var(--card) 88%, transparent); }
+.card-more:hover { background: var(--accent); }
+.artifact-cards .card-body { padding: 10px 12px; gap: 4px; }
+.artifact-cards .card-body { align-content: start; }
+.artifact-cards .card-title + .card-meta { min-height: 24px; }
+@media (max-width: 800px) { .artifact-cards { grid-template-columns: minmax(0, 1fr); } .artifact-cards .thumb { display: none; } .views .mode { min-height: var(--hit-min, 44px); min-width: 44px; justify-content: center; } .views .mode-l { display: none; } }

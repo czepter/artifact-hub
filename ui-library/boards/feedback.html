@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Feedback</title><link rel="stylesheet" href="../_shared/css/tokens.css"><link rel="stylesheet" href="../_shared/css/components.css"><body><main class="sc"><section><h2>Badge</h2><div class="sc-row">
+<span class="ui-badge" data-variant="default">default</span>
+<span class="ui-badge" data-variant="secondary">secondary</span>
+<span class="ui-badge" data-variant="outline">outline</span>
+<span class="ui-badge" data-variant="destructive">destructive</span>
+<span class="ui-badge" data-variant="secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> v3</span>
+</div></section>
+<section style="max-width:520px;display:grid;gap:12px"><h2>Alert</h2>
+<div class="ui-alert" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><div class="ui-alert-title">Link copied</div><div class="ui-alert-desc">Anyone with the link can view this artifact.</div></div>
+<div class="ui-alert" data-variant="destructive" role="alert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><div class="ui-alert-title">Publish failed</div><div class="ui-alert-desc">index.html is missing. Add it and publish again.</div></div>
+</section>
+<section><h2>Badge · count · status</h2><div class="sc-row">
+<span class="ui-badge" data-variant="count">3</span><span class="ui-badge" data-variant="count">12</span>
+<span class="ui-badge" data-variant="dot" data-state="live" style="border-color:var(--border)">Live</span>
+<span class="ui-badge" data-variant="dot" style="border-color:var(--border)">Archived</span>
+<span class="ui-badge" data-variant="dot" data-state="error" style="border-color:var(--border)">Failed</span>
+<a class="ui-badge" data-variant="outline" href="#">General</a>
+</div></section>
+<section style="max-width:520px;display:grid;gap:12px"><h2>Alert · note with actions</h2>
+<div class="ui-alert" data-variant="note" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="../icons.svg#info"/></svg><div class="ui-alert-title">Viewing v2</div><div class="ui-alert-desc">This is an older version. Comments you add belong to it.</div><div class="ui-alert-actions"><button class="ui-btn" data-variant="outline" data-size="sm">Go to live</button></div></div>
+</section>
+<section style="max-width:520px"><h2>Loading · skeleton · progress</h2>
+<div style="display:flex;gap:16px;align-items:center;margin-bottom:12px"><span class="ui-spinner"></span><span class="ui-spinner" data-size="lg"></span><div class="ui-progress" style="flex:1"><span style="width:62%"></span></div><div class="ui-progress" data-indeterminate style="flex:1"><span></span></div></div>
+<div class="hub-board"><div class="ui-skeleton-row"><span class="ui-skeleton" style="width:46%"></span><span class="ui-skeleton" style="width:64px"></span></div><div class="ui-skeleton-row"><span class="ui-skeleton" style="width:38%"></span><span class="ui-skeleton" style="width:64px"></span></div><div class="ui-skeleton-row"><span class="ui-skeleton" style="width:55%"></span><span class="ui-skeleton" style="width:64px"></span></div></div></section>
+<section style="max-width:520px"><h2>Empty state</h2><div class="hub-board"><div class="ui-empty"><strong>No artifacts here yet</strong><p>Move one in from its menu, or ask a connected client to create one in this workspace.</p><button class="ui-btn" data-variant="outline" data-size="sm">Copy MCP endpoint</button></div></div></section>
+<section><h2>Tooltip</h2><span class="ui-tooltip">Copy link <span class="ui-kbd" style="margin-left:6px;background:transparent;border-color:currentColor;color:inherit">L</span></span></section>
+<section><h2>Toast</h2><div class="ui-toast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Reply sent</span><button class="ui-btn" data-variant="ghost" data-size="xs" style="margin-left:auto">Undo</button></div></section>
+</main></body></html>

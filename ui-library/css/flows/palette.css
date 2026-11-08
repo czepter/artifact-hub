@@ -1,0 +1,14 @@
+/* Command palette: one keyboard door to every page, artifact, waiting thread and action. A trigger sits in the main pill; the palette opens over a dimmed page. */
+.palette-trigger { gap: 8px; }
+.palette-trigger .ui-kbd { margin-left: 4px; }
+.palette-trigger-m { display: none; }
+.palette-scrim { position: absolute; inset: 0; z-index: 30; display: grid; justify-items: center; align-content: start; padding: 88px 12px 0; background: color-mix(in srgb, var(--foreground) 38%, transparent); animation: ui-fade var(--dur) var(--ease) both; }
+.palette { width: min(100%, 560px); max-height: 78vh; display: flex; flex-direction: column; }
+.palette .ui-command-input { height: 48px; }
+.palette .ui-command-input input { font-size: var(--text-md); }
+.palette .ui-command-list { overflow: auto; padding: 6px; }
+.palette .ui-menu-item { min-height: 36px; }
+.palette mark { background: transparent; color: inherit; font-weight: var(--w-name); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--primary); }
+.palette-meta { margin-left: auto; font-size: var(--text-xs); color: var(--muted-foreground); }
+.palette .ui-menu-item[data-highlighted] .palette-meta { color: var(--accent-foreground); }
+@media (max-width: 800px) { .palette-trigger { display: none; } .palette-trigger-m { display: inline-flex; min-width: var(--hit-min, 44px); min-height: var(--hit-min, 44px); } .palette-scrim { padding-top: 116px; } .palette .ui-menu-item { min-height: var(--hit-min, 44px); } }

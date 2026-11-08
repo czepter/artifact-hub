@@ -1,0 +1,18 @@
+/* Viewer review mode: one mode switch (View / Edit / Review) replaces three separate icon buttons; the comment panel belongs to Review and follows the selected board. */
+.modes { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-lg); background: var(--muted); }
+.mode { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: var(--radius-md); background: transparent; font-size: var(--text-sm); font-weight: var(--w-label); color: var(--muted-foreground); cursor: pointer; transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.mode:hover:not([aria-pressed="true"]) { color: var(--foreground); }
+.mode[aria-pressed="true"] { background: var(--background); color: var(--foreground); box-shadow: var(--shadow-sm); }
+.board-tag { position: absolute; display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); font-weight: var(--w-label); color: var(--muted-foreground); }
+.board-tag[data-selected] { color: var(--foreground); }
+.viewer-board[data-selected] { outline: 2px solid var(--primary); outline-offset: 2px; }
+.panel-scope { display: flex; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.panel-scope .ui-tabs-list { width: 100%; height: 32px; }
+.panel-scope .ui-tab { flex: 1; }
+.thread .row-line b { font-weight: var(--w-label); }
+.thread-ctx { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--muted-foreground); }
+@media (max-width: 800px) { .mode { height: 36px; min-width: 40px; justify-content: center; } }
+@media (max-width: 520px) { .mode-l { display: none; } .mode[aria-pressed="true"] .mode-l { display: inline; } .viewer .shell-bar > .shell-pill { max-width: 100%; } .viewer .shell-bar { flex-wrap: wrap; } }
+/* the canvas contents live in a world that scales down on small screens, like the app's zoomed-out canvas */
+.world { position: absolute; inset: 0; transform-origin: 0 0; }
+@media (max-width: 800px) { .world { transform: scale(.44); } .viewer-canvas { min-height: 330px; } }

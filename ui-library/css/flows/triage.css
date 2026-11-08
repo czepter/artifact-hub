@@ -1,0 +1,23 @@
+/* Triage: comments as a master/detail view. The list on the left keeps its place, the thread on the right is answered in place. */
+.triage { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.triage-list .ui-row { align-items: flex-start; padding-block: 12px; }
+.triage-list .ui-row[aria-current="true"] { background: var(--muted); }
+.triage-list .ui-row[aria-current="true"] .triage-snippet { font-weight: var(--w-label); }
+.triage-snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: var(--text-sm); }
+.triage-from { display: flex; justify-content: space-between; gap: 8px; font-size: var(--text-xs); color: var(--muted-foreground); }
+.triage-from strong { font-weight: var(--w-label); color: var(--foreground); }
+.triage-detail header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.triage-detail h3 { margin: 0; font-size: var(--text-md); }
+.triage-ctx { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.triage-msgs { display: grid; gap: 0; }
+.triage-msg { display: grid; gap: 4px; padding: 14px 16px; }
+.triage-msg + .triage-msg { border-top: 1px solid var(--border); }
+.triage-msg .row-line strong { font-size: var(--text-sm); }
+.triage-msg p { margin: 0; font-size: var(--text-sm); max-width: 68ch; }
+.triage-compose, .triage-compose > * { min-width: 0; }
+.triage-compose .ui-textarea { width: 100%; }
+.triage-compose-foot > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+.triage-compose { display: grid; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--muted) 40%, transparent); }
+.triage-compose-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.triage-keys { display: flex; gap: 12px; font-size: var(--text-xs); color: var(--muted-foreground); }
+@media (max-width: 800px) { .triage { grid-template-columns: minmax(0, 1fr); } .triage-keys { display: none; } .triage-compose-foot .ui-btn { min-height: var(--hit-min, 44px); } }

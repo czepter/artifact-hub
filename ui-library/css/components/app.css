@@ -1,0 +1,13 @@
+/* App components: the canvas idiom used by the hub chrome (ground, pills, labelled boards, rows, comment thread). */
+.hub-ground { background: var(--canvas-bg); background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px); background-size: 24px 24px; }
+.hub-pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); box-shadow: var(--shadow-float); }
+.hub-pill [aria-current="page"] { background: var(--muted); }
+.hub-board-label { margin: 0 0 6px; font-size: var(--text-xs); font-weight: var(--w-label); color: var(--muted-foreground); }
+.hub-board { border: 1px solid var(--border); border-radius: 12px; background: var(--card); overflow: hidden; }
+.hub-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; border: 0; border-bottom: 1px solid var(--border); background: transparent; text-align: left; }
+.hub-row:last-child { border-bottom: 0; }
+.hub-row:hover { background: var(--accent); }
+.hub-row small { color: var(--muted-foreground); font-size: var(--text-xs); }
+.hub-thread { width: 320px; padding: 16px; display: grid; gap: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow-menu); }
+.hub-thread-badge { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--primary); color: var(--primary-foreground); font-size: var(--text-xs); font-weight: var(--w-name); }
+.hub-reply { padding-top: 12px; border-top: 1px solid var(--border); display: grid; gap: 4px; }

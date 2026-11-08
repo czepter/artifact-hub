@@ -1,0 +1,8 @@
+/* Sign-in: identifier first. One field and one primary action; passkey and GitHub are alternatives, not competing buttons. */
+.signin { width: 100%; max-width: 380px; display: grid; gap: 16px; }
+.signin-id { display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: var(--text-xs); padding: 0 4px; }
+.signin-id .shell-dot { background: var(--primary); }
+.signin-alt { display: grid; gap: 8px; }
+.signin-alt .ui-btn { justify-content: flex-start; width: 100%; }
+.signin-foot { margin: 0; text-align: center; font-size: var(--text-xs); color: var(--muted-foreground); }
+@media (max-width: 520px) { .signin-alt .ui-btn, .signin .ui-btn { min-height: var(--hit-min, 44px); } }

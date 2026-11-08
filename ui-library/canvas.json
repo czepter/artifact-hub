@@ -1,0 +1,185 @@
+{
+ "v": 3,
+ "title": "Artifact Hub UI library",
+ "boards": {
+  "boards/foundations.html": {
+   "x": 0,
+   "y": 0,
+   "w": 880,
+   "h": 1300,
+   "title": "Foundations"
+  },
+  "boards/buttons.html": {
+   "x": 960,
+   "y": 0,
+   "w": 880,
+   "h": 700,
+   "title": "Buttons"
+  },
+  "boards/forms.html": {
+   "x": 1920,
+   "y": 0,
+   "w": 880,
+   "h": 1000,
+   "title": "Forms"
+  },
+  "boards/feedback.html": {
+   "x": 0,
+   "y": 1400,
+   "w": 880,
+   "h": 1100,
+   "title": "Feedback"
+  },
+  "boards/surfaces.html": {
+   "x": 960,
+   "y": 1400,
+   "w": 880,
+   "h": 1100,
+   "title": "Surfaces"
+  },
+  "boards/overlays.html": {
+   "x": 1920,
+   "y": 1400,
+   "w": 880,
+   "h": 620,
+   "title": "Overlays"
+  },
+  "boards/chrome.html": {
+   "x": 2900,
+   "y": 0,
+   "w": 1100,
+   "h": 600,
+   "title": "App chrome"
+  },
+  "boards/shell-dashboard.html": {
+   "x": 0,
+   "y": 2700,
+   "w": 1280,
+   "h": 1180,
+   "title": "Dashboard shell"
+  },
+  "boards/shell-artifacts.html": {
+   "x": 1400,
+   "y": 2700,
+   "w": 1280,
+   "h": 760,
+   "title": "Artifacts shell"
+  },
+  "boards/shell-comments.html": {
+   "x": 0,
+   "y": 4000,
+   "w": 1280,
+   "h": 560,
+   "title": "Comments shell"
+  },
+  "boards/shell-account.html": {
+   "x": 1400,
+   "y": 4000,
+   "w": 1280,
+   "h": 1180,
+   "title": "Account shell"
+  },
+  "boards/shell-admin-overview.html": {
+   "x": 0,
+   "y": 5300,
+   "w": 1280,
+   "h": 750,
+   "title": "Admin overview shell"
+  },
+  "boards/shell-admin-members.html": {
+   "x": 1400,
+   "y": 5300,
+   "w": 1280,
+   "h": 640,
+   "title": "Members shell"
+  },
+  "boards/shell-admin-clients.html": {
+   "x": 0,
+   "y": 6170,
+   "w": 1280,
+   "h": 560,
+   "title": "Clients shell"
+  },
+  "boards/shell-admin-share-links.html": {
+   "x": 1400,
+   "y": 6170,
+   "w": 1280,
+   "h": 520,
+   "title": "Share links shell"
+  },
+  "boards/shell-admin-activity.html": {
+   "x": 0,
+   "y": 6850,
+   "w": 1280,
+   "h": 720,
+   "title": "Activity shell"
+  },
+  "boards/shell-sign-in.html": {
+   "x": 1400,
+   "y": 6850,
+   "w": 720,
+   "h": 640,
+   "title": "Sign-in"
+  },
+  "boards/shell-setup.html": {
+   "x": 0,
+   "y": 7690,
+   "w": 720,
+   "h": 640,
+   "title": "Owner setup"
+  },
+  "boards/shell-join.html": {
+   "x": 840,
+   "y": 7690,
+   "w": 720,
+   "h": 560,
+   "title": "Join via invite"
+  },
+  "boards/shell-consent.html": {
+   "x": 1680,
+   "y": 7690,
+   "w": 720,
+   "h": 780,
+   "title": "Approve access"
+  },
+  "boards/shell-viewer.html": {
+   "x": 0,
+   "y": 8590,
+   "w": 1280,
+   "h": 820,
+   "title": "Viewer shell"
+  },
+  "boards/shell-menus-dialogs.html": {
+   "x": 1400,
+   "y": 8590,
+   "w": 1280,
+   "h": 1170,
+   "title": "Shell menus and dialogs"
+  }
+ },
+ "order": [
+  "boards/foundations.html",
+  "boards/buttons.html",
+  "boards/forms.html",
+  "boards/feedback.html",
+  "boards/surfaces.html",
+  "boards/overlays.html",
+  "boards/chrome.html",
+  "boards/shell-dashboard.html",
+  "boards/shell-artifacts.html",
+  "boards/shell-comments.html",
+  "boards/shell-account.html",
+  "boards/shell-admin-overview.html",
+  "boards/shell-admin-members.html",
+  "boards/shell-admin-clients.html",
+  "boards/shell-admin-share-links.html",
+  "boards/shell-admin-activity.html",
+  "boards/shell-sign-in.html",
+  "boards/shell-setup.html",
+  "boards/shell-join.html",
+  "boards/shell-consent.html",
+  "boards/shell-viewer.html",
+  "boards/shell-menus-dialogs.html"
+ ],
+ "notes": {}
+}
