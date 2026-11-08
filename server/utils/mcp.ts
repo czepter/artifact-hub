@@ -5,6 +5,7 @@ import {
   addComment, createShare, editFile, getArtifact, listArtifacts, listComments, listFiles, listVersions,
   publish, readFile, requireArtifact, resolveComment,
 } from './store'
+import { onArtifact } from './bus'
 import { registerRenderTool } from './render/tool'
 import { createWorkspace, getWorkspaceOf, listWorkspaces, moveArtifact, resolveWorkspaceId } from './workspaces'
 
@@ -63,7 +64,7 @@ The owner can edit boards in the viewer (select, retype text, change styles, add
 
 ## Comments
 People comment on the page; threads anchor to a board + element (CSS path + text fingerprint).
-Use read_comments to see open threads, reply_comment to answer, resolve_comment when handled.
+Use read_comments to see open threads, wait_for_comments (long-poll, loop it) to react to new ones as they arrive, reply_comment to answer, resolve_comment when handled.
 Comments belong to the version they were made on; the viewer re-locates them on newer versions.
 `
 
@@ -76,7 +77,7 @@ const fileSchema = z.object({
 })
 
 const TOOL_SCOPE: Record<string, string> = {
-  guide: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', data_list: 'read', data_get: 'read',
+  guide: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
   reply_comment: 'comment', resolve_comment: 'comment',
   create_artifact: 'write', create_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
   share_link: 'share',
@@ -179,6 +180,30 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
       author: r.author_email, kind: r.author_kind, body: r.body, created_at: r.created_at,
       replies: all.filter(c => c.parent_id === r.id).map(c => ({ id: c.id, author: c.author_email, kind: c.author_kind, body: c.body, created_at: c.created_at })),
     })))
+  })
+
+  server.registerTool('wait_for_comments', {
+    description: 'Long-poll: returns as soon as a person has commented on (or replied under) this artifact after `since`, or after timeout_s with an empty list. Pass `since` = the `next_since` of the previous call (omit on the first call to start from now). Call again in a loop to react to web comments; your own replies never wake it.',
+    inputSchema: { id: z.string(), since: z.string().optional(), timeout_s: z.number().int().min(1).max(50).default(25) },
+  }, async ({ id, since, timeout_s }, extra: { signal?: AbortSignal }) => {
+    requireArtifact(id)
+    const from = since ?? new Date().toISOString()
+    const fresh = () => listComments(id).filter(c => c.author_kind === 'person' && c.created_at > from)
+    const result = (list: ReturnType<typeof fresh>) => text({
+      comments: list.map(c => ({ id: c.id, thread_id: c.parent_id ?? c.id, board: c.board, anchor: c.anchor, author: c.author_email, body: c.body, created_at: c.created_at })),
+      next_since: list.length ? list[list.length - 1]!.created_at : from,
+    })
+    let hits = fresh()
+    if (hits.length) return result(hits)
+    await new Promise<void>((resolve) => {
+      let off = () => {}
+      const done = () => { clearTimeout(timer); off(); extra?.signal?.removeEventListener('abort', done); resolve() }
+      const timer = setTimeout(done, timeout_s * 1000)
+      off = onArtifact(id, (ev) => { if (ev.type === 'comments' && fresh().length) done() })
+      extra?.signal?.addEventListener('abort', done)
+    })
+    hits = fresh()
+    return result(hits)
   })
 
   server.registerTool('reply_comment', {
