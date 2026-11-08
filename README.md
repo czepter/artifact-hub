@@ -50,6 +50,12 @@ existing artifacts migrate into an auto-created default workspace ("General", id
   Shared files (below) are the first thing built on it; design-token editing and a component registry can follow.
 - Test: `node tests/workspaces-test.mjs` against `PORT=3111 npm run dev:login`.
 
+### UI library workspace
+`ui-library/` is the hub's own component set as plain CSS plus showcase boards, kept in a separate workspace so it can be reviewed and tuned (for example with Impeccable) without touching the app.
+- `ui-library/css/tokens.css` (palette, radius, shadow, spacing, light/dark) and `css/components.css` (one block per `app/components/ui` component, `data-variant`/`data-size` mirror the cva variants) become the workspace's **shared files**; seven boards (Foundations, Buttons, Forms, Feedback, Surfaces, Overlays, App chrome) link them as `../_shared/css/*.css`, so an edit shows in every board at once.
+- `HUB=<origin> HUB_TOKEN=<bearer> node scripts/seed-ui-library.mjs` creates the "UI Library" workspace and the artifact, or syncs a new version when they exist. Local dev: `HUB=http://localhost:3000 HUB_TOKEN=devtoken` against `npm run dev:login`.
+- Direction of travel is library to app: after tuning the CSS, port the change into the matching `ui/*.vue` classes (or `main.css` tokens).
+
 ### Shared files (tokens, component styles, scripts, images across boards)
 Each workspace has a library of files that every artifact, and so every board, in it can use. A board links a library file as
 `_shared/<path>` relative to the artifact root, e.g. `<link rel="stylesheet" href="_shared/css/tokens.css">` (from a board in a
@@ -59,7 +65,7 @@ too (frames reload, board pictures are redrawn, server renders and the headless 
   `_shared/` is reserved: an artifact cannot publish files under it. Limits: 5 MB per file, 200 files, 20 MB per workspace.
 - `GET /api/workspaces/:id/files` (members; `:id` may be a name), `GET|PUT|DELETE /api/workspaces/:id/files/<path>` (read text source / create or replace
   `{content, encoding?}` / remove; PUT and DELETE need an editor), `POST /api/artifacts/:id/share-file {files:[{path, as?}]}` copies files of an artifact into its workspace's library.
-- MCP: `list_shared_files`, `read_shared_file` (read), `write_shared_files`, `share_file` (write). `read_file` also reads `_shared/…` paths and `get_artifact` lists `shared_files`.
+- MCP: `list_shared_files`, `read_shared_file` (read), `write_shared_files`, `edit_shared_file` (in-place old_text/new_text edits), `share_file` (write). `read_file` also reads `_shared/…` paths and `get_artifact` lists `shared_files`.
 - UI: **Shared files…** in the workspace menu on **Artifacts** (list, new file, upload, edit, delete, copy the link tag); **Share files with workspace…** in an artifact's title menu promotes its css/js/fonts/images.
 - The `.zip` export includes the shared files the artifact actually references (following references between shared files).
 - Test: `node tests/shared-files-test.mjs` against `PORT=3111 npm run dev:login`.
