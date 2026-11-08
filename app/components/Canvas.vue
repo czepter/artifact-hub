@@ -632,6 +632,21 @@ function locate(path: string) {
   if (items.length) postTo(path, { type: 'hub:locate', items })
 }
 
+/** A link clicked inside a board: another board gets the focus, another file loads in this frame, an external address opens in a new tab. */
+function navigateFrom(board: BoardView, href: string) {
+  let u: URL
+  try { u = new URL(href) } catch { return }
+  const base = new URL(props.data.frameBase, location.origin)
+  if (u.origin === base.origin && u.pathname.startsWith(base.pathname)) {
+    let path: string
+    try { path = u.pathname.slice(base.pathname.length).split('/').map(decodeURIComponent).join('/') } catch { return }
+    if (isCanvas.value && boards.value.some(b => b.path === path)) { enterFocus(path); return }
+    if (revOf.value[path] !== undefined) { const el = frames.get(board.path); if (el) el.src = `${u.origin}${u.pathname}${u.search}` }
+    return
+  }
+  if (u.protocol === 'http:' || u.protocol === 'https:') window.open(u.href, '_blank', 'noopener,noreferrer')
+}
+
 function onMessage(e: MessageEvent) {
   const d = e.data
   if (!d || typeof d.type !== 'string' || !d.type.startsWith('hub:')) return
@@ -645,6 +660,8 @@ function onMessage(e: MessageEvent) {
     props.rpc({ op: d.op, scope: d.scope, key: d.key, value: d.value, prefix: d.prefix })
       .then(result => reply({ ok: true, result: result ?? null }))
       .catch((err: any) => reply({ ok: false, error: err?.data?.statusMessage ?? err?.statusMessage ?? err?.message ?? 'request failed' }))
+  } else if (d.type === 'hub:navigate' && typeof d.href === 'string') {
+    navigateFrom(board, d.href)
   } else if (d.type === 'hub:key' && typeof d.key === 'string') {
     handleKey({ key: d.key, code: typeof d.code === 'string' ? d.code : undefined, mod: !!d.mod, shift: !!d.shift, alt: !!d.alt })
   } else if (d.type === 'hub:edit-select') {
@@ -835,7 +852,7 @@ watch(isCanvas, () => nextTick(() => fit()))
           :ref="(el) => { if (el) frames.set(b.path, el as HTMLIFrameElement); else frames.delete(b.path) }"
           :src="b.src"
           :title="b.title || 'Artifact'"
-          sandbox="allow-scripts allow-popups allow-forms allow-downloads"
+          sandbox="allow-scripts allow-popups allow-forms allow-downloads allow-modals"
           referrerpolicy="no-referrer"
           :style="{ pointerEvents: !isCanvas || commentMode || elementLevel(b.path) || interacting === b.path || focusBoard === b.path ? 'auto' : 'none' }"
         />

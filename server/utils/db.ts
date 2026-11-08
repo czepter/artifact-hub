@@ -64,6 +64,19 @@ export function useDb(): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS comments_by_artifact ON comments(artifact_id, created_at);
 
+    -- Files pasted into comments. comment_id stays NULL until the comment is posted (staged uploads).
+    CREATE TABLE IF NOT EXISTS comment_attachments (
+      id TEXT PRIMARY KEY,
+      artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+      comment_id TEXT REFERENCES comments(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      mime TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      content BLOB NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS comment_attachments_by_comment ON comment_attachments(comment_id);
+
     CREATE TABLE IF NOT EXISTS oauth_clients (
       client_id TEXT PRIMARY KEY,
       name TEXT NOT NULL,

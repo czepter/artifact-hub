@@ -15,7 +15,7 @@ import {
  * In-frame bridge. Speaks a small postMessage protocol with the host viewer:
  *   host -> frame  hub:comment-mode {enabled}
  *                  hub:locate {items:[{id, selector, text}]}
- *   frame -> host  hub:ready | hub:layout | hub:target {anchor} | hub:located {items:[{id, rect|null}]}
+ *   frame -> host  hub:ready | hub:layout | hub:target {anchor} | hub:located {items:[{id, rect|null}]} | hub:navigate {href}
  * Unlike Open Design's own bridge (which only targets elements the agent tagged with data-od-id),
  * this one anchors to any element via a stable CSS path plus a text fingerprint.
  */
@@ -98,6 +98,16 @@ const BRIDGE = String.raw`<script data-hub-bridge>(function(){
     if (['ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Escape'].indexOf(ev.key) < 0) return;
     ev.preventDefault(); post({ type: 'hub:key', key: ev.key, code: ev.code, mod: ev.ctrlKey || ev.metaKey, shift: ev.shiftKey, alt: ev.altKey });
   }, true);
+  // Links between views: a plain click on a link to another file (or an external site) is handed to the viewer, which
+  // focuses the target board, loads the page in this frame or opens a new tab. Anchors (#x) and links the page handled itself are left alone.
+  document.addEventListener('click', function(ev){
+    if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null; if (!a) return;
+    var raw = a.getAttribute('href');
+    if (!raw || raw.charAt(0) === '#' || /^(mailto|tel|javascript|blob|data):/i.test(raw) || a.hasAttribute('download')) return;
+    if (a.target && a.target !== '_self') return;
+    ev.preventDefault(); post({ type: 'hub:navigate', href: a.href });
+  }, false);
   var layoutTimer = null;
   function layout(){ clearTimeout(layoutTimer); layoutTimer = setTimeout(function(){ post({ type: 'hub:layout', width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight }); }, 80); }
   window.addEventListener('load', function(){ post({ type: 'hub:ready' }); layout(); });
@@ -200,7 +210,7 @@ export function instrumentHtml(source: string, opts: { props?: Record<string, un
 
 /** Response headers for any artifact file: opaque origin even when opened directly. */
 export const FRAME_HEADERS = {
-  'Content-Security-Policy': 'sandbox allow-scripts allow-popups allow-forms allow-downloads',
+  'Content-Security-Policy': 'sandbox allow-scripts allow-popups allow-forms allow-downloads allow-modals',
   // The sandboxed page has an opaque origin, so reading sibling files (dc-import, fetch) is cross-origin. Access is the token in the URL path, never cookies.
   'Access-Control-Allow-Origin': '*',
   'X-Content-Type-Options': 'nosniff',

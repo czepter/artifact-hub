@@ -6,6 +6,8 @@ export interface Anchor {
   click: { x: number, y: number }
 }
 
+export interface Attachment { id: string, name: string, mime: string, size: number }
+
 export interface Comment {
   id: string
   artifact_id: string
@@ -17,6 +19,7 @@ export interface Comment {
   body: string
   parent_id: string | null
   resolved: number
+  attachments: Attachment[]
   created_at: string
 }
 

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import {
   dataDelete, dataGet, dataList, dataSet,
   addComment, createShare, editFile, getArtifact, listArtifacts, listComments, listFiles, listVersions,
-  publish, readFile, requireArtifact, resolveComment,
+  publish, readAttachment, readFile, requireArtifact, resolveComment, INLINE_IMAGE,
 } from './store'
 import { onArtifact } from './bus'
 import { registerRenderTool } from './render/tool'
@@ -18,6 +18,11 @@ name are carried over, and \`remove\` drops paths. Updating requires base_versio
 ## Single page
 Publish \`index.html\` (a full document or a fragment). It is shown in a sandboxed iframe (scripts allowed, no
 same-origin access, no cookies). Relative paths to other files in the artifact work (css/site.css, img/a.png).
+
+Links between views: a plain \`<a href="screens/Detail.html">\` to another board (path relative to the page, as in canvas.json) opens that board
+in the viewer; a link to another file of the artifact loads it in the same frame; http(s) links open in a new tab. \`#anchor\` links scroll in place.
+Dropdowns, tabs, toggles, forms and \`alert/confirm\` work as in any page (scripts run; state lives in the page or in artifact.shared/personal).
+On a canvas a board is clicked through after a double-click (or in focus/present mode, where links navigate between boards).
 
 ## Canvas (several screens/boards on one pannable, zoomable surface)
 Publish \`canvas.json\` plus one HTML file per board:
@@ -64,7 +69,7 @@ The owner can edit boards in the viewer (select, retype text, change styles, add
 
 ## Comments
 People comment on the page; threads anchor to a board + element (CSS path + text fingerprint).
-Use read_comments to see open threads, wait_for_comments (long-poll, loop it) to react to new ones as they arrive, reply_comment to answer, resolve_comment when handled.
+Comments can carry pasted images/files (the attachments field); fetch one with read_comment_attachment. Use read_comments to see open threads, wait_for_comments (long-poll, loop it) to react to new ones as they arrive, reply_comment to answer, resolve_comment when handled.
 Comments belong to the version they were made on; the viewer re-locates them on newer versions.
 `
 
@@ -77,7 +82,7 @@ const fileSchema = z.object({
 })
 
 const TOOL_SCOPE: Record<string, string> = {
-  guide: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
+  guide: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', read_comment_attachment: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
   reply_comment: 'comment', resolve_comment: 'comment',
   create_artifact: 'write', create_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
   share_link: 'share',
@@ -177,9 +182,19 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     const roots = all.filter(c => !c.parent_id && (!only_open || !c.resolved))
     return text(roots.map(r => ({
       id: r.id, version: r.version, board: r.board, anchor: r.anchor, resolved: !!r.resolved,
-      author: r.author_email, kind: r.author_kind, body: r.body, created_at: r.created_at,
-      replies: all.filter(c => c.parent_id === r.id).map(c => ({ id: c.id, author: c.author_email, kind: c.author_kind, body: c.body, created_at: c.created_at })),
+      author: r.author_email, kind: r.author_kind, body: r.body, attachments: r.attachments, created_at: r.created_at,
+      replies: all.filter(c => c.parent_id === r.id).map(c => ({ id: c.id, author: c.author_email, kind: c.author_kind, body: c.body, attachments: c.attachments, created_at: c.created_at })),
     })))
+  })
+
+  server.registerTool('read_comment_attachment', {
+    description: 'Fetch a file pasted into a comment (ids are in the `attachments` of read_comments / wait_for_comments). Images come back as images; other files as base64 text.',
+    inputSchema: { id: z.string(), attachment_id: z.string() },
+  }, ({ id, attachment_id }) => {
+    requireArtifact(id)
+    const f = readAttachment(id, attachment_id)
+    if (INLINE_IMAGE.test(f.mime)) return { content: [{ type: 'image' as const, data: f.content.toString('base64'), mimeType: f.mime }] }
+    return text({ name: f.name, mime: f.mime, size: f.size, encoding: 'base64', content: f.content.toString('base64') })
   })
 
   server.registerTool('wait_for_comments', {
@@ -190,7 +205,7 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     const from = since ?? new Date().toISOString()
     const fresh = () => listComments(id).filter(c => c.author_kind === 'person' && c.created_at > from)
     const result = (list: ReturnType<typeof fresh>) => text({
-      comments: list.map(c => ({ id: c.id, thread_id: c.parent_id ?? c.id, board: c.board, anchor: c.anchor, author: c.author_email, body: c.body, created_at: c.created_at })),
+      comments: list.map(c => ({ id: c.id, thread_id: c.parent_id ?? c.id, board: c.board, anchor: c.anchor, author: c.author_email, body: c.body, attachments: c.attachments, created_at: c.created_at })),
       next_since: list.length ? list[list.length - 1]!.created_at : from,
     })
     let hits = fresh()
