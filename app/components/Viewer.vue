@@ -495,23 +495,23 @@ async function post(path: string, body?: unknown) {
   return r
 }
 
-async function submitDraft(body: string) {
+async function submitDraft(body: string, attachmentIds: string[] = []) {
   if (!draft.value) return
   busy.value = true
   formError.value = ''
   try {
-    await post('comments', { body, board: draft.value.board, anchor: draft.value.anchor, version: data.value!.artifact.version })
+    await post('comments', { body, attachmentIds, board: draft.value.board, anchor: draft.value.anchor, version: data.value!.artifact.version })
     draft.value = null
     await load()
   } catch (e: any) { formError.value = e?.statusMessage ?? 'Could not post' } finally { busy.value = false }
 }
 
-async function reply(body: string) {
+async function reply(body: string, attachmentIds: string[] = []) {
   if (!selected.value) return
   busy.value = true
   formError.value = ''
   try {
-    await post('comments', { body, parentId: selected.value.id })
+    await post('comments', { body, attachmentIds, parentId: selected.value.id })
     await load()
   } catch (e: any) { formError.value = e?.statusMessage ?? 'Could not post' } finally { busy.value = false }
 }
@@ -849,6 +849,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         v-if="popoverOpen && !presenting && !editMode"
         :key="draft ? 'draft' : selectedId!"
         class="popover"
+        :ref-id="refId"
         :style="popoverStyle"
         :mode="draft ? 'draft' : 'thread'"
         :target="draft ? { tag: draft.anchor.tag, text: draft.anchor.text } : undefined"
@@ -926,7 +927,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         <span class="num">{{ roots.indexOf(c) + 1 }}</span>
         <span class="txt">
           <span class="line1"><strong>{{ c.author_kind === 'model' ? 'Claude' : c.author_email }}</strong> <span class="muted">{{ ago(c.created_at) }}</span></span>
-          <span class="snip">{{ c.body }}</span>
+          <span class="snip">{{ c.body || (c.attachments?.length ? '📎 ' + c.attachments.map(a => a.name).join(', ') : '') }}</span>
           <span v-if="repliesOf(c.id).length || c.resolved || (c.anchor && located[c.id] === false) || c.version !== data.artifact.version" class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span v-if="repliesOf(c.id).length">{{ repliesOf(c.id).length }} {{ repliesOf(c.id).length === 1 ? 'reply' : 'replies' }}</span>
             <Badge v-if="c.resolved" variant="secondary">resolved</Badge>

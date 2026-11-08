@@ -175,23 +175,55 @@ export function revokeShare(artifactId: string, token: string) {
 
 // ---- comments -----------------------------------------------------------------------------
 
+export interface AttachmentMeta { id: string, name: string, mime: string, size: number }
+
 export interface CommentRow {
   id: string, artifact_id: string, version: number, board: string | null, anchor: unknown,
   author_email: string, author_kind: 'person' | 'model', body: string, parent_id: string | null,
-  resolved: number, created_at: string
+  resolved: number, created_at: string, attachments: AttachmentMeta[]
 }
 
+export const ATTACHMENT_LIMITS = { bytes: 10 * 1024 * 1024, perComment: 6 }
+/** Only these are ever shown inline; everything else is served as a download. */
+export const INLINE_IMAGE = /^image\/(png|jpe?g|gif|webp|avif)$/
+
 export function listComments(artifactId: string): CommentRow[] {
-  const rows = useDb().prepare('SELECT * FROM comments WHERE artifact_id = ? ORDER BY created_at').all(artifactId) as unknown as (CommentRow & { anchor: string | null })[]
-  return rows.map(r => ({ ...r, anchor: r.anchor ? JSON.parse(r.anchor) : null }))
+  const db = useDb()
+  const rows = db.prepare('SELECT * FROM comments WHERE artifact_id = ? ORDER BY created_at').all(artifactId) as unknown as (Omit<CommentRow, 'attachments'> & { anchor: string | null })[]
+  const files = db.prepare('SELECT id, comment_id, name, mime, size FROM comment_attachments WHERE artifact_id = ? AND comment_id IS NOT NULL ORDER BY created_at, rowid').all(artifactId) as unknown as (AttachmentMeta & { comment_id: string })[]
+  const by = new Map<string, AttachmentMeta[]>()
+  for (const f of files) by.set(f.comment_id, [...(by.get(f.comment_id) ?? []), { id: f.id, name: f.name, mime: f.mime, size: f.size }])
+  return rows.map(r => ({ ...r, anchor: r.anchor ? JSON.parse(r.anchor) : null, attachments: by.get(r.id) ?? [] }))
+}
+
+/** Stages an upload; it belongs to no comment until addComment claims it. */
+export function addAttachment(artifactId: string, name: string, mime: string, content: Buffer): AttachmentMeta {
+  if (!content.length) throw createError({ statusCode: 400, statusMessage: 'Empty file' })
+  if (content.length > ATTACHMENT_LIMITS.bytes) throw createError({ statusCode: 413, statusMessage: `File too large (max ${ATTACHMENT_LIMITS.bytes / 1024 / 1024} MB)` })
+  const db = useDb()
+  // Staged uploads that were never posted are dropped after an hour.
+  db.prepare('DELETE FROM comment_attachments WHERE comment_id IS NULL AND created_at < ?').run(new Date(Date.now() - 3600_000).toISOString())
+  const id = randomUUID()
+  const clean = { name: name.replace(/[\u0000-\u001f\\/]/g, '_').slice(0, 120) || 'file', mime: mime.toLowerCase().split(';')[0]!.trim().slice(0, 100) || 'application/octet-stream' }
+  db.prepare('INSERT INTO comment_attachments (id, artifact_id, comment_id, name, mime, size, content, created_at) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)')
+    .run(id, artifactId, clean.name, clean.mime, content.length, content, now())
+  return { id, name: clean.name, mime: clean.mime, size: content.length }
+}
+
+export function readAttachment(artifactId: string, id: string) {
+  const row = useDb().prepare('SELECT name, mime, size, content FROM comment_attachments WHERE id = ? AND artifact_id = ?').get(id, artifactId) as { name: string, mime: string, size: number, content: Uint8Array } | undefined
+  if (!row) throw createError({ statusCode: 404, statusMessage: 'Not found' })
+  return { ...row, content: Buffer.from(row.content) }
 }
 
 export function addComment(c: {
   artifactId: string, version: number, board?: string | null, anchor?: unknown, email: string,
-  kind: 'person' | 'model', body: string, parentId?: string | null,
+  kind: 'person' | 'model', body: string, parentId?: string | null, attachmentIds?: string[],
 }) {
-  const body = c.body.trim()
-  if (!body || body.length > 5000) throw createError({ statusCode: 400, statusMessage: 'Comment must be 1-5000 characters' })
+  const body = (c.body ?? '').trim()
+  const attachmentIds = [...new Set(c.attachmentIds ?? [])]
+  if (attachmentIds.length > ATTACHMENT_LIMITS.perComment) throw createError({ statusCode: 400, statusMessage: `At most ${ATTACHMENT_LIMITS.perComment} attachments per comment` })
+  if ((!body && !attachmentIds.length) || body.length > 5000) throw createError({ statusCode: 400, statusMessage: 'Comment must be 1-5000 characters' })
   const db = useDb()
   let { version, board, anchor } = c
   if (c.parentId) {
@@ -205,6 +237,15 @@ export function addComment(c: {
   const id = randomUUID()
   db.prepare('INSERT INTO comments (id, artifact_id, version, board, anchor, author_email, author_kind, body, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(id, c.artifactId, version, board ?? null, anchor ? JSON.stringify(anchor) : null, c.email, c.kind, body, c.parentId ?? null, now())
+  if (attachmentIds.length) {
+    const claim = db.prepare('UPDATE comment_attachments SET comment_id = ? WHERE id = ? AND artifact_id = ? AND comment_id IS NULL')
+    for (const a of attachmentIds) {
+      if (!claim.run(id, a, c.artifactId).changes) {
+        db.prepare('DELETE FROM comments WHERE id = ?').run(id) // cascades the files already claimed
+        throw createError({ statusCode: 400, statusMessage: 'An attachment expired. Paste it again.' })
+      }
+    }
+  }
   emitArtifact(c.artifactId, { type: 'comments' })
   try { logEvent(c.parentId ? 'replied' : 'commented', (db.prepare('SELECT title FROM artifacts WHERE id = ?').get(c.artifactId) as { title: string }).title, c.kind === 'model' ? `Claude (${useEvent().context.member?.name ?? 'MCP'})` : c.email) } catch { /* ignore */ }
   return id

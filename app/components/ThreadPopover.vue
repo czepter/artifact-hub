@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import type { Comment } from '~/types'
-import { X } from '@lucide/vue'
+import type { Attachment, Comment } from '~/types'
+import { Paperclip, X } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 
 const props = defineProps<{
+  refId: string
   mode: 'draft' | 'thread'
   /** draft: what the comment is attached to */
   target?: { tag: string, text: string }
@@ -21,8 +22,8 @@ const props = defineProps<{
   error: string
 }>()
 const emit = defineEmits<{
-  submit: [body: string]
-  reply: [body: string]
+  submit: [body: string, attachmentIds: string[]]
+  reply: [body: string, attachmentIds: string[]]
   resolve: []
   close: []
   saveEmail: [email: string]
@@ -45,11 +46,43 @@ function ago(iso: string) {
 }
 const who = (c: Comment) => (c.author_kind === 'model' ? 'Claude' : c.author_email)
 
+// Files pasted with Ctrl+V are uploaded right away and posted together with the comment.
+const MAX = { bytes: 10 * 1024 * 1024, count: 6 }
+const staged = ref<(Attachment & { local?: string })[]>([])
+const uploading = ref(0)
+const localError = ref('')
+
+async function addFiles(files: File[]) {
+  localError.value = ''
+  for (const f of files) {
+    if (staged.value.length + uploading.value >= MAX.count) { localError.value = `At most ${MAX.count} files per comment`; break }
+    if (f.size > MAX.bytes) { localError.value = `${f.name || 'File'} is larger than 10 MB`; continue }
+    uploading.value++
+    try {
+      const name = f.name || (f.type.startsWith('image/') ? `pasted-image.${f.type.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png'}` : 'pasted-file')
+      const a = await $fetch<Attachment>(`/api/view/${props.refId}/attachments`, {
+        method: 'POST', body: f, headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(name) },
+      })
+      staged.value.push(a)
+    } catch (e: any) { localError.value = e?.statusMessage ?? e?.data?.statusMessage ?? 'Upload failed' } finally { uploading.value-- }
+  }
+}
+
+function onPaste(e: ClipboardEvent) {
+  const files = [...(e.clipboardData?.files ?? [])]
+  if (!files.length) return // plain text pastes as usual
+  e.preventDefault()
+  void addFiles(files)
+}
+
+const canSend = computed(() => !props.busy && !uploading.value && (!!body.value.trim() || staged.value.length > 0))
+
 function send() {
   const text = body.value.trim()
-  if (!text || props.busy) return
-  emit(props.mode === 'draft' ? 'submit' : 'reply', text)
+  if (!canSend.value) return
+  emit(props.mode === 'draft' ? 'submit' : 'reply', text, staged.value.map(a => a.id))
   body.value = ''
+  staged.value = []
 }
 </script>
 
@@ -67,10 +100,14 @@ function send() {
       <Button class="ml-auto" variant="ghost" size="icon-xs" aria-label="Close" @click="emit('close')"><X /></Button>
     </header>
 
-    <p v-if="mode === 'thread' && thread" class="msg">{{ thread.body }}</p>
+    <template v-if="mode === 'thread' && thread">
+      <p v-if="thread.body" class="msg">{{ thread.body }}</p>
+      <CommentAttachments :ref-id="refId" :items="thread.attachments ?? []" />
+    </template>
     <div v-for="r in replies" :key="r.id" class="reply">
       <div class="meta"><strong>{{ who(r) }}</strong><span class="muted">{{ ago(r.created_at) }}</span></div>
-      <p class="msg">{{ r.body }}</p>
+      <p v-if="r.body" class="msg">{{ r.body }}</p>
+      <CommentAttachments :ref-id="refId" :items="r.attachments ?? []" />
     </div>
 
     <form v-if="needsEmail" class="gate" @submit.prevent="emit('saveEmail', email)">
@@ -85,19 +122,29 @@ function send() {
         v-model="body"
         class="min-h-16 resize-y"
         rows="3"
-        :placeholder="mode === 'draft' ? 'Write a comment…' : 'Reply…'"
+        :placeholder="mode === 'draft' ? 'Write a comment, or paste an image…' : 'Reply, or paste an image…'"
+        @paste="onPaste"
         @keydown.meta.enter.prevent="send"
         @keydown.ctrl.enter.prevent="send"
       />
+      <div v-if="staged.length || uploading" class="staged">
+        <div v-for="a in staged" :key="a.id" class="chip">
+          <img v-if="/^image\/(png|jpe?g|gif|webp|avif)$/.test(a.mime)" :src="`/api/view/${refId}/attachments/${a.id}`" :alt="a.name">
+          <Paperclip v-else class="size-3.5 shrink-0" />
+          <span class="n">{{ a.name }}</span>
+          <button type="button" class="x" :aria-label="`Remove ${a.name}`" @click="staged = staged.filter(x => x.id !== a.id)"><X class="size-3" /></button>
+        </div>
+        <span v-if="uploading" class="muted">Uploading…</span>
+      </div>
       <div class="row">
-        <Button size="sm" :disabled="busy || !body.trim()" @click="send">{{ mode === 'draft' ? 'Comment' : 'Reply' }}</Button>
+        <Button size="sm" :disabled="!canSend" @click="send">{{ mode === 'draft' ? 'Comment' : 'Reply' }}</Button>
         <Button v-if="mode === 'thread' && thread" size="sm" variant="outline" @click="emit('resolve')">{{ thread.resolved ? 'Reopen' : 'Resolve' }}</Button>
         <Button v-if="mode === 'draft'" size="sm" variant="outline" @click="emit('close')">Cancel</Button>
       </div>
     </template>
     <p v-else class="muted">This link is view-only.</p>
 
-    <p v-if="error" class="err" role="alert">{{ error }}</p>
+    <p v-if="error || localError" class="err" role="alert">{{ error || localError }}</p>
   </div>
 </template>
 
@@ -112,4 +159,10 @@ function send() {
 .meta { display: flex; gap: 8px; font-size: 13px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .gate { display: grid; gap: 8px; }
+.staged { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { display: flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 3px 4px 3px 4px; font-size: 12px; }
+.chip img { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; }
+.chip .n { min-width: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .x { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; color: var(--muted-foreground); }
+.chip .x:hover { background: var(--muted); color: var(--foreground); }
 </style>
