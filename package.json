@@ -9,7 +9,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "dev:login": "NUXT_DEV_LOGIN_EMAIL=dev@example.test NUXT_DEV_TOKEN=devtoken HUB_DB=.data/dev.sqlite nuxt dev",
-    "test:unit": "tsx tests/e2e/canvas-unit.ts && tsx tests/e2e/render-unit.ts"
+    "test:unit": "tsx tests/e2e/canvas-unit.ts && tsx tests/e2e/render-unit.ts && tsx tests/e2e/import-unit.ts"
   },
   "dependencies": {
     "@better-auth/passkey": "^1.7.18",
