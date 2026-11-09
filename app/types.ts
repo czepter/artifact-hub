@@ -30,6 +30,8 @@ export interface ViewData {
   email: string | null
   canvas: { boards?: Record<string, unknown>, order?: string[], notes?: Record<string, unknown>, title?: string } | null
   files: { path: string, rev: number }[]
+  /** Links between boards read from the boards' click-dummy attributes. */
+  flow?: { from: string, to: string, kind: 'go' | 'open' | 'link', trigger: 'click' | 'hover' | 'press' | 'focus' | 'change' | 'input' | 'blur' | 'after' | 'link' }[]
   /** Changes when the workspace's shared files change: boards reload. */
   sharedRev: number
   frameBase: string
@@ -50,6 +52,8 @@ export interface EditSel {
   parentFlex: boolean
   parentRow: boolean
   attrs: { src: string | null, href: string | null, alt: string | null, placeholder: string | null, title: string | null, id: string | null, cls: string | null, ariaLabel: string | null }
+  /** Click-dummy attributes (data-hub-*), null when not set. */
+  proto?: Record<'click' | 'hover' | 'press' | 'focus' | 'blur' | 'change' | 'input' | 'after' | 'component' | 'state' | 'show' | 'hide' | 'modal' | 'dismiss', string | null>
   contrast: { ratio: number, level: string, large: boolean } | null
   textEditable: boolean
   bound: boolean

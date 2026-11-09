@@ -1,4 +1,5 @@
 import { EDITOR } from './editorScript'
+import { PROTO } from './proto'
 import {
   buildPreviewVisibilityGuard,
   buildPreviewSandboxShim,
@@ -17,7 +18,8 @@ import {
  *                  hub:locate {items:[{id, selector, text}]}
  *                  hub:tweaks-update {values}   live tweak values for a Design Component board (handled by its runtime)
  *                  hub:tweaks-request           ask the board to announce its tweaks again
- *   frame -> host  hub:ready | hub:layout | hub:target {anchor} | hub:located {items:[{id, rect|null}]} | hub:navigate {href} | hub:tweaks-ready {defs, values}
+ *                  hub:proto-play {enabled}     the board is being played (focus/present): click-dummy timers run (see proto.ts)
+ *   frame -> host  hub:ready | hub:layout | hub:target {anchor} | hub:located {items:[{id, rect|null}]} | hub:navigate {href, transition?} | hub:back | hub:tweaks-ready {defs, values}
  * Unlike Open Design's own bridge (which only targets elements the agent tagged with data-od-id),
  * this one anchors to any element via a stable CSS path plus a text fingerprint.
  */
@@ -212,7 +214,7 @@ export function instrumentHtml(source: string, opts: { props?: Record<string, un
       : prependAfterDoctype(doc, guards)
   }
   const bodyClose = findRealTagOffset(doc, HTML_TAG_PATTERNS.bodyClose)
-  const tail = BRIDGE + EDITOR
+  const tail = BRIDGE + PROTO + EDITOR
   return bodyClose >= 0 ? doc.slice(0, bodyClose) + tail + doc.slice(bodyClose) : doc + tail
 }
 

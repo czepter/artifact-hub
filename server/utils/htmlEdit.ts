@@ -135,8 +135,10 @@ export type DirectiveKind = 'sc-for' | 'sc-if'
 
 const STYLE_PROP = /^(--[a-z0-9-]{1,40}|[a-z][a-z0-9-]{0,48})$/
 const STYLE_VALUE_BAD = /[;{}<>\\\r\n]/
-const ATTRS = new Set(['src', 'alt', 'href', 'placeholder', 'title', 'id', 'class', 'aria-label'])
-const ATTR_VALUE: Record<string, RegExp> = { id: /^[A-Za-z][\w:.-]{0,63}$/, class: /^[\w\s:./\-\[\]%#]{0,300}$/, 'aria-label': /^[^<>"]{0,200}$/ }
+/** Click-dummy attributes (see shared/protoFlow.ts); values are short action strings or state names, never markup. */
+const PROTO_ATTRS = ['data-hub-click', 'data-hub-hover', 'data-hub-press', 'data-hub-focus', 'data-hub-blur', 'data-hub-change', 'data-hub-input', 'data-hub-after', 'data-hub-component', 'data-hub-state', 'data-hub-show', 'data-hub-hide', 'data-hub-modal', 'data-hub-dismiss']
+const ATTRS = new Set(['src', 'alt', 'href', 'placeholder', 'title', 'id', 'class', 'aria-label', ...PROTO_ATTRS])
+const ATTR_VALUE: Record<string, RegExp> = { id: /^[A-Za-z][\w:.-]{0,63}$/, class: /^[\w\s:./\-\[\]%#]{0,300}$/, 'aria-label': /^[^<>"]{0,200}$/, ...Object.fromEntries(PROTO_ATTRS.map(a => [a, /^[^<>"\r\n]{0,300}$/])) }
 
 function splitDecls(css: string): string[] {
   const out: string[] = []

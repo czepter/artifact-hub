@@ -198,6 +198,27 @@ resyncs whenever it reconnects. Behind a proxy, keep response buffering and comp
   version). The artifact and its ledger entry commit in one transaction, so an import is whole or absent. New artifacts are
   private. `dry_run` does everything except create. Tables: `import_sources` (key), `import_requests` (log, source of `list_imports`).
 
+## Click dummies (prototype flows)
+- Boards are wired with attributes: triggers `data-hub-click`, `-after`, held `-hover` / `-press` / `-focus` (state changes revert), control
+  `-change` / `-input` / `-blur` (`{value}` is the control's value); component states `data-hub-component`, `-state`, `-show`, `-hide`; overlays
+  `data-hub-modal` (`dialog`, `drawer-right`, `drawer-left`, `sheet`, `popover`, `free`) and `-dismiss` (`outside`, `escape`, `none`).
+  Grammar and the reader for the flow live in `shared/protoFlow.ts`, the in-frame runtime in `server/utils/proto.ts` (injected into every
+  board next to the comment bridge). The MCP `guide` documents them for the model.
+- Actions: `go:<board>|<transition>`, `back`, `open:<board>` (board in an overlay frame), `open:#id` (a `data-hub-modal` element), `close`,
+  `state:<target>=<name>`, `toggle:<target>=<name>`. Any action may end in ` if <tests>` / ` unless <tests>` (tests joined by `&`, each
+  `<#id | @name | Component | self>:<filled|empty|checked|unchecked|valid|invalid|=v|!=v>`; `valid` is HTML validation, also on a whole form).
+  A component's state is a list of tokens: plain tokens are the main state, `facet:value` tokens are independent (`state:Menu.tab=b`).
+  Holds revert only the token they changed. Popovers are placed under the element that opened it; drawers and sheets slide in on a
+  `100vmax` box-shadow backdrop. Defaults are in `:where()`, so the page's own CSS wins. Transitions (none, fade, slide-left/right/up/down)
+  are played by the viewer on the target board and skipped for reduced motion. The viewer keeps a back stack while a prototype is played.
+- A board plays (timers run, component states start fresh) while it is in focus/present mode, or on a page that is not a canvas
+  (`hub:proto-play`). The runtime is inert in edit and comment mode. A click on empty space flashes all hotspots.
+- **Flow view:** `GET /api/view/<ref>` returns `flow` (edges from board to board: `go`, `open` or `link`, by any trigger or `link`), read from the boards' attributes and `<a href>`. The canvas draws one curve per pair of boards (solid: go, dashed: overlay,
+  dotted: link) behind the flow button next to the zoom controls.
+- **Editor:** the element properties have a *Prototype* section (triggers with an optional condition, component and states, overlay kind, dismissal) that writes
+  these attributes; values are restricted to short strings without markup. Tests: `tests/e2e/proto-unit.ts` (grammar, flow, injection) and, in real Chromium,
+  `tests/proto-runtime-test.mjs` (hotspots, states, overlays) and `tests/proto-forms-test.mjs` (controls, conditions, facets, drawers, popovers).
+
 ## Model
 - Artifact = versioned file set. Patch publishes (unnamed files carry over), `base_version` conflict check.
 - `canvas.json` + one HTML file per board = a canvas (same shape as Claude Design's). Otherwise `index.html`.

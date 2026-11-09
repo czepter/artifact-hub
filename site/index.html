@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Artifact Hub: a self-hosted home for what your AI builds</title>
-<meta name="description" content="Any AI tool that speaks MCP can publish pages and design canvases. You and your team review them in the browser and comment on the page. The AI reads and answers every comment. Open source, one SQLite file, your server.">
+<meta name="description" content="Any AI tool that speaks MCP can publish pages, design canvases and clickable prototypes. You and your team review them in the browser and comment on the page. The AI reads and answers every comment. Open source, one SQLite file, your server.">
 <meta name="color-scheme" content="light dark">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Artifact Hub: a self-hosted home for what your AI builds">
@@ -21,6 +21,7 @@
     <nav aria-label="Page">
       <a href="#loop">How it works</a>
       <a href="#canvas">Canvas</a>
+      <a href="#prototype">Click dummies</a>
       <a href="#features">Features</a>
       <a href="#self-host">Self-host</a>
     </nav>
@@ -81,6 +82,21 @@
     </div>
   </section>
 
+  <section id="prototype" class="section wrap split">
+    <div>
+      <h2>Click dummies you can test</h2>
+      <p>Wire boards into a clickable prototype with plain attributes, or with the editor's Prototype panel. Hotspots go to another board with a fade or slide, and a back button returns. A menu, tab or card can have states for hover, press and open.</p>
+      <p>Selects, radios and checkboxes can drive those states. An action can depend on a field: go to the cart only if the e-mail is valid and the terms are checked. Dialogs, drawers, sheets and popovers open over a board, and the flow view draws every link between boards.</p>
+    </div>
+    <div class="shot">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="img/flow-dark.png">
+        <img src="img/flow-light.png" width="1600" height="1000" loading="lazy"
+             alt="Four boards of a shop prototype on the canvas, joined by arrows: a solid arrow for a link between screens, a dashed one for a sheet that opens over a board.">
+      </picture>
+    </div>
+  </section>
+
   <section id="features" class="section wrap">
     <h2>Sharing, teams and access</h2>
     <dl class="features">
@@ -88,6 +104,7 @@
       <div><dt>Members and roles</dt><dd>Roles are owner, editor and commenter. Invite people by link. They sign in with a password, a passkey or GitHub.</dd></div>
       <div><dt>Control what the AI may do</dt><dd>When you connect a tool, you choose what it may do: read, comment, publish and edit, or share. It never gets more rights than you have.</dd></div>
       <div><dt>Workspaces and shared files</dt><dd>Group artifacts. Upload tokens.css or a font to a workspace once, and every board in it links to the same file.</dd></div>
+      <div><dt>Form states and checks</dt><dd>A select, radio or checkbox can switch a component state. A form can show an error until the e-mail is valid, with no script.</dd></div>
       <div><dt>Interactive pages</dt><dd>Pages the AI builds can do more than look nice. A poll counts votes from everyone, and a notes page remembers what you typed.</dd></div>
       <div><dt>Export and import</dt><dd>Boards as PNG, SVG, WebP or JPEG, whole artifacts as .zip. Imports exports from Claude Design.</dd></div>
     </dl>

@@ -37,6 +37,8 @@ const props = defineProps<{
   templateError: string
   flushEdits: () => Promise<void>
 }>()
+/** The canvas's boards, for the prototype links in the properties. */
+const boardList = computed(() => Object.entries((props.canvas?.boards ?? {}) as Record<string, { title?: string }>).map(([path, b]) => ({ path, title: b?.title || path })))
 const emit = defineEmits<{
   cmd: [c: Record<string, unknown>]
   add: [kind: PaletteKind]
@@ -158,7 +160,7 @@ const layersOpen = ref(true)
           :artifact-id="artifactId" :board="sel.board || activeBoard!" :sel="sel" :busy="templateBusy" :error="templateError" :flush-edits="flushEdits"
           @apply="emit('templateApply', $event)" @open-code="emit('update:tab', 'code')"
         />
-        <ElementProps v-if="sel" :sel="sel" @cmd="emit('cmd', $event)" @export-board="activeBoard && emit('exportBoard', activeBoard)" />
+        <ElementProps v-if="sel" :sel="sel" :boards="boardList" :active-board="activeBoard" @cmd="emit('cmd', $event)" @export-board="activeBoard && emit('exportBoard', activeBoard)" />
         <p v-else class="hint empty">Click an element on the board to edit it, or pick one in Layers. Double-click text to retype it. Esc deselects.</p>
       </template>
       <template v-else>
