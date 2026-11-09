@@ -7,7 +7,8 @@ import {
 } from './store'
 import { onArtifact } from './bus'
 import { registerRenderTool } from './render/tool'
-import { requireOwner } from './auth'
+import { requireEditor, requireOwner } from './auth'
+import { listImports, requestImport } from './imports'
 import { deleteSharedFile, editSharedFile, sharedArtifactId, listSharedFiles, putSharedFile, readServedFile, readSharedFile, shareArtifactFiles, cleanSharedPath, sharedRev, SHARED_PREFIX } from './sharedFiles'
 import { transferBoards } from './transfer'
 import { createWorkspace, deleteWorkspace, getWorkspaceOf, listWorkspaces, moveArtifact, resolveWorkspaceId, updateWorkspace } from './workspaces'
@@ -84,6 +85,12 @@ Optional canvas fields (all validated; omit them for the defaults):
 - arrow \`bind\`: {"start":{"type":"note","id":"n1"},"end":{"type":"board","id":"screens/Home.html"}} attaches an end to a note or board; the viewer draws the end at the target's edge and follows it when it moves. Only arrows can be bound, to boards, rect, oval, sticky and text; targets must exist. A rect or oval may carry \`text\` (shown centred).
 Limits: 1000 notes, 400 pen points per stroke, boards and notes at most 8000 px wide or high, 200 operations per edit.
 
+## Importing pages saved from claude.ai
+request_import (source_url, source_version, optional workspace, dry_run) returns a one-time upload link: send the saved page with the curl command it gives you, so the content never passes through you.
+The answer to the upload is the report. A page with an embedded document becomes a canvas (boards keep file names and coordinates, annotations become notes); any other page becomes index.html.
+The same source_url and source_version is skipped; a new source_version adds a version to the artifact imported before. Run with dry_run: true first, import in small batches, and read the overview with list_imports.
+Comments, version history and window.claude calls are not carried over (the report warns).
+
 ## Looking at your work
 render_artifact draws the live version (or \`version\`) as png/webp/jpeg (returned as an image), svg (vector, from canvas.json) or xml (structured scene). \`board\` renders one board. Use it after publishing to check layout; boards show as text outlines when the server has no headless browser (the \`boards\` field says which).
 
@@ -105,9 +112,9 @@ const fileSchema = z.object({
 })
 
 const TOOL_SCOPE: Record<string, string> = {
-  guide: 'read', list_shared_files: 'read', read_shared_file: 'read', render_artifact: 'read', list_workspaces: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', read_comment_attachment: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
+  guide: 'read', list_shared_files: 'read', read_shared_file: 'read', render_artifact: 'read', list_workspaces: 'read', list_imports: 'read', list_artifacts: 'read', get_artifact: 'read', read_file: 'read', read_comments: 'read', read_comment_attachment: 'read', wait_for_comments: 'read', data_list: 'read', data_get: 'read',
   reply_comment: 'comment', resolve_comment: 'comment',
-  write_shared_files: 'write', edit_shared_file: 'write', transfer_boards: 'write', share_file: 'write', create_artifact: 'write', create_workspace: 'write', update_workspace: 'write', delete_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
+  write_shared_files: 'write', edit_shared_file: 'write', transfer_boards: 'write', share_file: 'write', create_artifact: 'write', request_import: 'write', create_workspace: 'write', update_workspace: 'write', delete_workspace: 'write', move_artifact: 'write', publish_files: 'write', edit_file: 'write', data_set: 'write', data_delete: 'write',
   share_link: 'share',
 }
 
@@ -164,6 +171,21 @@ export function buildMcpServer(origin: string, scopes: string[] = []) {
     const r = publish({ title, files, label, workspaceId: workspace })
     return text({ ...r, url: `${origin}/a/${r.id}` })
   })
+
+  server.registerTool('request_import', {
+    description: 'Import a page saved from claude.ai without sending its content through you. Returns a one-time upload link (valid once, at most 60 minutes, for you only); send the file with the returned curl command and read the report it answers with (status imported|skipped|failed, hub_url, boards, warnings). source_url is the idempotence key: the same source_version is skipped (then no link is returned), a new source_version becomes a new hub version of the same artifact. dry_run: true runs everything except creating the artifact. Files up to 16 MB. New artifacts are private. Use list_imports for the overview.',
+    inputSchema: {
+      source_url: z.string().min(1).max(2000).describe('The artifact\'s address on claude.ai; the key for repeated runs'),
+      source_version: z.string().min(1).max(200).describe('Version, timestamp or hash of the saved page; the same value again means "unchanged"'),
+      workspace: z.string().optional().describe('Workspace id or name; default workspace if omitted'),
+      dry_run: z.boolean().optional(),
+    },
+  }, (input) => text(requestImport(requireEditor(useEvent()), input, origin)))
+
+  server.registerTool('list_imports', {
+    description: 'Report over your import requests, one row per source (the latest request wins): status imported|skipped|failed|pending|expired with reason, hub_url, boards and warnings, plus counts per status. Dry runs are listed separately (dry_run: true).',
+    inputSchema: { status: z.enum(['imported', 'skipped', 'failed', 'pending', 'expired']).optional(), limit: z.number().int().min(1).max(1000).optional() },
+  }, ({ status, limit }) => text(listImports(requireEditor(useEvent()).id, { status, limit })))
 
   server.registerTool('get_artifact', {
     description: 'Current state: live version, files and versions. Read this before publishing to get base_version.',

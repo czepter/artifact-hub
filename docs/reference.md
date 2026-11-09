@@ -185,6 +185,18 @@ resyncs whenever it reconnects. Behind a proxy, keep response buffering and comp
 - **Import .zip** (artifact list): accepts our own exports and Design exports. The archive root is the folder holding
   `canvas.json` (else `index.html`); everything outside it is dropped. Hostile archives are bounded (entries, inflated
   size, path traversal). `POST /api/artifacts/import` takes the raw zip bytes.
+- **Import pages saved from claude.ai** (MCP `request_import`, `list_imports`). The agent never carries file content:
+  `request_import {source_url, source_version, workspace?, dry_run?}` returns a link (`PUT /api/import/upload/<token>`, valid
+  once, at most 60 minutes, bound to the requesting member, up to 16 MB); the file goes there with `curl --data-binary`, and
+  the answer is the report (`status` imported|skipped|failed, `action` created|updated, `hub_url`, `boards`, `warnings`,
+  `reason`). A page with `<script type="application/json" id="appifact-doc">` becomes a canvas (`title`, `launch`; `artboards`
+  become `boards` and `order`, `annotations` become `notes`; the editor shell, `support.js` and `vendor/react*.js` are dropped);
+  any other page becomes `index.html`. The page is only parsed, nothing in it runs. Rejected for that artifact only: paths with
+  `..`, absolute paths, `_shared/`, boards or notes over 8000 px, more than 1000 notes. Warnings: unknown fields (never dropped
+  silently), comments (not imported), `window.claude` calls. `source_url` is the key: the same `source_version` is skipped
+  (no link is issued), a new one adds a hub version to the same artifact (files no longer in the source are removed in that
+  version). The artifact and its ledger entry commit in one transaction, so an import is whole or absent. New artifacts are
+  private. `dry_run` does everything except create. Tables: `import_sources` (key), `import_requests` (log, source of `list_imports`).
 
 ## Model
 - Artifact = versioned file set. Patch publishes (unnamed files carry over), `base_version` conflict check.

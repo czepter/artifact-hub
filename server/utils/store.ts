@@ -84,6 +84,8 @@ export function listVersions(id: string) {
 export function publish(opts: {
   id?: string | null, title?: string, files?: FileInput[], remove?: string[],
   baseVersion?: number, label?: string, replace?: boolean, workspaceId?: string,
+  /** Runs inside the publish transaction, just before it commits; if it throws, nothing is published. */
+  inTransaction?: (id: string, version: number) => void,
 }): { id: string, version: number } {
   const db = useDb()
   const files = opts.files ?? []
@@ -132,6 +134,7 @@ export function publish(opts: {
     }
 
     db.prepare('UPDATE artifacts SET current_version = ?, updated_at = ?, title = COALESCE(?, title) WHERE id = ?').run(next, t, opts.id ? (opts.title ?? null) : null, id)
+    opts.inTransaction?.(id, next)
     db.exec('COMMIT')
     emitArtifact(id, { type: 'version', version: next })
     sharedPublished(id)
