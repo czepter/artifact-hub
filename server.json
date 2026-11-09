@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.czepter/artifact-hub",
+  "title": "Artifact Hub",
+  "description": "Self-hosted hub for versioned pages and design canvases. The AI reads on-page comments.",
+  "version": "0.0.0",
+  "websiteUrl": "https://czepter.github.io/artifact-hub/",
+  "repository": {
+    "url": "https://github.com/czepter/artifact-hub",
+    "source": "github",
+    "id": "1449657638"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/czepter/artifact-hub:latest",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:3000/mcp"
+      },
+      "environmentVariables": [
+        {
+          "name": "NUXT_BASE_URL",
+          "description": "Public address of this hub, for example https://hub.example.com. Set it behind a reverse proxy so sign-in links use the right host.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
