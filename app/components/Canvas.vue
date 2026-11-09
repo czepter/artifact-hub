@@ -68,6 +68,7 @@ const view_ = useCanvasView(viewport, size)
 const { tx, ty, k, animate, pulse, zoomAt, centerOn, toWorld } = view_
 const interacting = ref<string | null>(null) // double-clicked board whose page receives input while on the canvas
 const focusBoard = ref<string | null>(null) // one board expanded to fill the window
+const focusMode = ref<'fit' | 'play'>('fit') // fit: the whole board letterboxed into the window; play: the board at the window's full width, scrolling when taller
 const frames = new Map<string, HTMLIFrameElement>()
 const pins = reactive<Record<string, { x: number, y: number }>>({})
 const panning = ref(false)
@@ -116,7 +117,10 @@ const boards = computed<BoardView[]>(() => boardBase.value.map((b) => {
 
 /** A page-type board (expand: fill) takes the whole window when focused, so its layout reflows like a real page. */
 function dims(b: BoardView) {
-  return focusBoard.value === b.path && b.expand === 'fill' ? { w: size.w, h: size.h } : { w: b.w, h: b.h }
+  if (focusBoard.value !== b.path) return { w: b.w, h: b.h }
+  if (b.expand === 'fill') return { w: size.w, h: size.h }
+  if (focusMode.value === 'play') return { w: b.w, h: Math.min(b.h, size.h / (size.w / b.w)) } // taller than the window: the page scrolls inside
+  return { w: b.w, h: b.h }
 }
 
 const { heights: noteH, measure: measureNotes } = useNoteHeights(viewport)
@@ -183,14 +187,15 @@ function layoutFocus() {
   if (!b) return
   const d = dims(b)
   // Fills the canvas area edge to edge (letterboxed only when the board's aspect ratio differs).
-  const nk = b.expand === 'fill' ? 1 : Math.min(size.w / d.w, size.h / d.h, 3)
+  const nk = b.expand === 'fill' ? 1 : focusMode.value === 'play' ? size.w / d.w : Math.min(size.w / d.w, size.h / d.h, 3)
   k.value = nk
   tx.value = (size.w - d.w * nk) / 2 - b.x * nk
   ty.value = (size.h - d.h * nk) / 2 - b.y * nk
 }
 
-function enterFocus(path: string) {
+function enterFocus(path: string, mode?: 'fit' | 'play') {
   if (!isCanvas.value || !boards.value.some(b => b.path === path)) return
+  focusMode.value = mode ?? (focusBoard.value ? focusMode.value : 'fit')
   if (!focusBoard.value) saved = { tx: tx.value, ty: ty.value, k: k.value }
   pulse()
   interacting.value = null

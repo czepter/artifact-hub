@@ -34,7 +34,7 @@ interface CanvasApi {
   firstBoard: string | null
   selectedBoardPath: string | null
   focusBoard: string | null
-  enterFocus: (path: string) => void
+  enterFocus: (path: string, mode?: 'fit' | 'play') => void
   boardAtPoint: (x: number, y: number) => { path: string, x: number, y: number } | null
   selectBoard: (path: string | null) => void
   selectNote: (id: string | null) => void
@@ -316,7 +316,7 @@ async function onOpenTweaks(path: string) {
   panelTab.value = 'tweaks'
 }
 function playBoard(path: string) {
-  const go = () => canvasRef.value?.enterFocus(path)
+  const go = () => canvasRef.value?.enterFocus(path, 'play')
   if (editMode.value) void stopEdit().then(go); else go()
 }
 function editContent(path: string) { canvasRef.value?.enterFocus(path) }
