@@ -95,6 +95,7 @@ const BRIDGE = String.raw`<script data-hub-bridge>(function(){
   });
   // In focus/present mode the viewer owns the arrow keys; forward them from inside the page (not while typing).
   document.addEventListener('keydown', function(ev){
+    if (enabled && ev.key === 'Escape') { post({ type: 'hub:escape' }); return; }
     if (!navKeys || ev.metaKey || ev.ctrlKey || ev.altKey) return;
     var t = ev.target; if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     if (['ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Escape'].indexOf(ev.key) < 0) return;

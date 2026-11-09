@@ -665,7 +665,13 @@ const icons: Record<string, string> = {
 }
 
 function closeMenu() { menuOpen.value = false; shareOpen.value = false }
+// Esc closes an open comment popover first, then leaves comment mode.
+function onEscape() {
+  if (draft.value || selectedId.value) closePopover()
+  else if (commentMode.value) void setMode('view')
+}
 function onDocKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && commentMode.value && !(e.target as HTMLElement)?.closest('input, textarea, select, [contenteditable]')) onEscape()
   if (e.key === 'Escape') { closeMenu(); if (renaming.value) renaming.value = false; endPresent() }
   if (editMode.value && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !(e.target as HTMLElement)?.closest('input, textarea, select, [contenteditable]')) { e.preventDefault(); void undo() }
   // The same shortcuts also work when keyboard focus is in the panel rather than in the board.
@@ -912,6 +918,7 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         @target="onTarget"
         @select="select"
         @deselect="deselect"
+        @escape="onEscape"
         @focus-change="onFocusChange"
         @edit-select="onEditSelect"
         @edit-op="onEditOp"
