@@ -15,7 +15,7 @@ export const ARROWHEADS = ['none', 'arrow', 'triangle', 'dot', 'bar'] as const
 export type BindTarget = { type: 'board' | 'note', id: string }
 export type Bind = { start?: BindTarget | null, end?: BindTarget | null }
 
-export interface BoardPatch { x?: number, y?: number, w?: number, h?: number, title?: string, is_interactive?: boolean, expand?: string | null, tweaks?: Record<string, unknown> | null, locked?: boolean | null, group?: string | null }
+export interface BoardPatch { x?: number, y?: number, w?: number, h?: number, title?: string, is_interactive?: boolean, expand?: string | null, tweaks?: Record<string, unknown> | null, locked?: boolean | null, group?: string | null, /** Size follows the page content (set by the viewer when the page reports its size). */ autosize?: boolean | null }
 /** Fields that are `null` in a patch are cleared (removed from the stored note). */
 export interface NoteInput {
   kind?: NoteKind, src?: string, x?: number, y?: number, w?: number, h?: number, text?: string, fill?: string, color?: string, size?: string, bold?: boolean, points?: number[][]
@@ -208,7 +208,7 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         }
         if (taken.has(path!) || canvas.boards[path!]) throw new CanvasError(409, `A file named ${path} already exists`)
         const title = (op.title ?? 'Board').slice(0, 80)
-        canvas.boards[path!] = { x: clamp(op.x, -100000, 100000, 'x'), y: clamp(op.y, -100000, 100000, 'y'), w: clamp(op.w, 40, 8000, 'w'), h: clamp(op.h, 40, 8000, 'h'), title }
+        canvas.boards[path!] = { x: clamp(op.x, -100000, 100000, 'x'), y: clamp(op.y, -100000, 100000, 'y'), w: clamp(op.w, 40, 8000, 'w'), h: clamp(op.h, 40, 8000, 'h'), title, autosize: true }
         canvas.order.push(path!)
         taken.add(path!)
         addFiles.push({ path: path!, content: BLANK_BOARD(title) })
@@ -224,6 +224,7 @@ export function applyCanvasOps(input: Canvas | null, files: string[], ops: Canva
         if (p.is_interactive !== undefined) b.is_interactive = !!p.is_interactive
         if (p.locked !== undefined) { if (p.locked !== null && typeof p.locked !== 'boolean') throw new CanvasError(400, 'locked must be true or false'); if (!p.locked) delete b.locked; else b.locked = true }
         if (p.group !== undefined) { if (p.group === null) delete b.group; else if (typeof p.group !== 'string' || !ID.test(p.group)) throw new CanvasError(400, 'Invalid group'); else b.group = p.group }
+        if (p.autosize !== undefined) { if (p.autosize) b.autosize = true; else delete b.autosize }
         if (p.expand !== undefined) { if (p.expand === null || p.expand === '') delete b.expand; else if (p.expand === 'fill') b.expand = 'fill'; else throw new CanvasError(400, 'Invalid expand') }
         if (p.tweaks !== undefined) {
           if (p.tweaks === null) delete b.tweaks
