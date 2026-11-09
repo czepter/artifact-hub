@@ -4,10 +4,10 @@ name: CI
 # already tested in its PR, so a push to main only warms the caches (below).
 on:
   pull_request:
-    paths-ignore: ['**.md', '.impeccable/**', '.claude/**', 'LICENSE']
+    paths-ignore: ['**.md', 'docs/**', 'site/**', '.impeccable/**', '.claude/**', 'LICENSE']
   push:
     branches: [main]
-    paths-ignore: ['**.md', '.impeccable/**', '.claude/**', 'LICENSE']
+    paths-ignore: ['**.md', 'docs/**', 'site/**', '.impeccable/**', '.claude/**', 'LICENSE']
   workflow_dispatch:
 
 concurrency:
@@ -45,10 +45,8 @@ jobs:
       - uses: actions/setup-node@v7
         with: { node-version: 24, cache: npm } # node:sqlite is a built-in
       - run: npm ci --ignore-scripts # unit tests need no nuxt prepare
-      - name: Unit tests (canvas ops, geometry, html edit)
-        run: npx --yes tsx@4 tests/e2e/canvas-unit.ts
-      - name: "Unit tests (rendering: svg, xml, png, webp)"
-        run: npx --yes tsx@4 tests/e2e/render-unit.ts
+      - name: Unit tests (canvas ops, geometry, html edit, rendering)
+        run: npm run test:unit
 
   build:
     if: github.event_name != 'push'

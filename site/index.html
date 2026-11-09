@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artifact Hub: a self-hosted home for what your AI builds</title>
+<meta name="description" content="Any AI tool that speaks MCP can publish pages and design canvases. You and your team review them in the browser and comment on the page. The AI reads and answers every comment. Open source, one SQLite file, your server.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Artifact Hub: a self-hosted home for what your AI builds">
+<meta property="og:description" content="A self-hosted home for what your AI tools build, with a review loop they can read and answer.">
+<meta property="og:image" content="https://czepter.github.io/artifact-hub/img/viewer-light-review.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="ground">
+  <header class="bar wrap">
+    <a class="mark" href="./">Artifact Hub</a>
+    <nav aria-label="Page">
+      <a href="#loop">How it works</a>
+      <a href="#canvas">Canvas</a>
+      <a href="#features">Features</a>
+      <a href="#self-host">Self-host</a>
+    </nav>
+    <a class="btn btn-outline btn-sm" href="https://github.com/czepter/artifact-hub">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="16" height="16"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+      GitHub
+    </a>
+  </header>
+
+  <section class="hero wrap">
+    <h1>Any AI tool can publish.<br>You review.<br>The work stays on your server.</h1>
+    <p class="lede">
+      Artifact Hub is a self-hosted alternative to claude.ai artifacts. Any MCP client can use it, from Claude to an agent you wrote yourself.
+      The AI publishes versioned pages and design canvases. You and your team open them in the browser and comment on the page. The AI reads each comment and replies.
+    </p>
+    <p class="cta">
+      <a class="btn btn-primary btn-lg" href="#self-host">Self-host it</a>
+      <a class="btn btn-outline btn-lg" href="https://github.com/czepter/artifact-hub">View the source</a>
+    </p>
+    <p class="fine">MIT licensed. One Docker image, one SQLite file.</p>
+
+    <figure class="board">
+      <figcaption>Northwind: pricing, onboarding, dashboard</figcaption>
+      <div class="shot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="img/viewer-dark-review.png">
+          <img src="img/viewer-light-review.png" width="1600" height="1000" fetchpriority="high"
+               alt="Artifact Hub showing a pricing page board. A review comment is pinned to the Most popular tag and the agent's reply is open under it.">
+        </picture>
+      </div>
+      <p class="caption">A comment pinned to the “Most popular” tag. The AI has already replied.</p>
+    </figure>
+  </section>
+</div>
+
+<main>
+  <section id="loop" class="section wrap">
+    <h2>One review loop, shared with the AI</h2>
+    <ol class="steps">
+      <li><h3>Publish</h3><p>Ask your AI tool for a page or a design canvas. The result shows up in the hub as soon as it is done. Every change is saved as a new version, and you can go back to an earlier one.</p></li>
+      <li><h3>Comment</h3><p>Open the link, click any element and say what is wrong. The thread stays attached to that element, also on newer versions.</p></li>
+      <li><h3>Answer</h3><p>The AI reads the open comments, replies, fixes the page and marks the thread as resolved. It can also wait for new comments while you review.</p></li>
+    </ol>
+  </section>
+
+  <section id="canvas" class="section wrap split">
+    <div>
+      <h2>Boards on a canvas</h2>
+      <p>Boards sit side by side on an infinite wall. You can pan and zoom, focus one board, or present them in order. The owner edits in place with layers, properties and free placement, like in a design tool.</p>
+      <p>Every board is isolated from the rest of the app, so a page the AI wrote cannot reach your account or your other work.</p>
+    </div>
+    <div class="shot">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="img/viewer-dark.png">
+        <img src="img/viewer-light.png" width="1600" height="1000" loading="lazy"
+             alt="Three boards on the Artifact Hub canvas: a pricing page, a mobile onboarding screen and a dashboard.">
+      </picture>
+    </div>
+  </section>
+
+  <section id="features" class="section wrap">
+    <h2>Sharing, teams and access</h2>
+    <dl class="features">
+      <div><dt>Share links</dt><dd>View-only or comment links. Guests leave an e-mail, no account needed. Revoke a link any time.</dd></div>
+      <div><dt>Members and roles</dt><dd>Roles are owner, editor and commenter. Invite people by link. They sign in with a password, a passkey or GitHub.</dd></div>
+      <div><dt>Control what the AI may do</dt><dd>When you connect a tool, you choose what it may do: read, comment, publish and edit, or share. It never gets more rights than you have.</dd></div>
+      <div><dt>Workspaces and shared files</dt><dd>Group artifacts. Upload tokens.css or a font to a workspace once, and every board in it links to the same file.</dd></div>
+      <div><dt>Interactive pages</dt><dd>Pages the AI builds can do more than look nice. A poll counts votes from everyone, and a notes page remembers what you typed.</dd></div>
+      <div><dt>Export and import</dt><dd>Boards as PNG, SVG, WebP or JPEG, whole artifacts as .zip. Imports exports from Claude Design.</dd></div>
+    </dl>
+  </section>
+
+  <section class="section wrap own">
+    <h2>It is yours</h2>
+    <p>The database is one SQLite file in a volume you control. Accounts, share links and the access you gave your AI tools all live on your server, and no third-party service stores your work. The first account is the owner. After that, people join by invitation only.</p>
+  </section>
+
+  <section id="self-host" class="section wrap">
+    <h2>Run it yourself</h2>
+    <div class="code-grid">
+      <div class="code">
+        <div class="code-head"><span>Docker</span><button type="button" class="copy" data-target="c-docker">Copy</button></div>
+<pre><code id="c-docker">docker run -d --name artifact-hub -p 3000:3000 \
+  -v artifact-hub:/data \
+  -e NUXT_BASE_URL=https://hub.example.com \
+  ghcr.io/czepter/artifact-hub:latest</code></pre>
+      </div>
+      <div class="code">
+        <div class="code-head"><span>From source</span><button type="button" class="copy" data-target="c-src">Copy</button></div>
+<pre><code id="c-src">git clone https://github.com/czepter/artifact-hub.git
+cd artifact-hub
+npm install
+npm run dev   # http://localhost:3000</code></pre>
+      </div>
+    </div>
+    <ol class="next">
+      <li>Open the hub and create the owner account on the sign-in page.</li>
+      <li>Serve it over HTTPS and set <code>NUXT_BASE_URL</code> to the public address.</li>
+      <li>In your AI tool, add <code>https://hub.example.com/mcp</code> as an MCP server (in Claude: a custom connector) and approve the consent screen.</li>
+    </ol>
+    <p class="more">Environment variables, rendering, workspaces and the full API are in the <a href="https://github.com/czepter/artifact-hub#readme">README</a> and the <a href="https://github.com/czepter/artifact-hub/blob/main/docs/reference.md">reference</a>.</p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>Artifact Hub is open source under the MIT license. It is an independent project and not affiliated with Anthropic.</span>
+    <span class="links"><a href="https://github.com/czepter/artifact-hub">GitHub</a><a href="https://github.com/czepter/artifact-hub/blob/main/LICENSE">License</a></span>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = document.getElementById(b.dataset.target).textContent
+    navigator.clipboard.writeText(t).then(function () {
+      b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy' }, 1600)
+    }, function () {})
+  })
+})
+</script>
+</body>
+</html>

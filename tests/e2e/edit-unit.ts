@@ -1,4 +1,4 @@
-import { annotate, ensureIds, applyEdits, sanitizeInline, EditError } from '/home/christian/.t3/scratch/2026-11-06-is-there-an-opensource-alternative-39b4b457/artifact-hub/server/utils/htmlEdit'
+import { annotate, ensureIds, applyEdits, sanitizeInline, EditError } from '../../server/utils/htmlEdit'
 import { readFileSync } from 'node:fs'
 let fails = 0
 const ok = (n: string, c: any, x: any = '') => { console.log(c ? 'PASS' : 'FAIL', n, c ? '' : JSON.stringify(x).slice(0, 300)); if (!c) fails++ }
@@ -118,7 +118,7 @@ const m = ensureIds(messy); ok('messy html: tags without end tags are tagged and
 r = applyEdits(messy, [{ type: 'style', id: 'p1', set: { color: 'red' } }]); ok('messy html: edit lands on the right implied-end element', /<p [^>]*style="color: red"[^>]*>two/.test(r.source) && /<p data-hub-id="p0">one/.test(r.source), r.source)
 
 // --- the real board from the user's canvas
-const real = readFileSync('/tmp/claude-1000/-home-christian--t3-scratch-2026-11-06-is-there-an-opensource-alternative-39b4b457/00602bf4-a546-4128-a40b-6523462d718e/scratchpad/t/dc/Consent.dc.html', 'utf8')
+const real = readFileSync(new URL('./dc/Consent.dc.html', import.meta.url), 'utf8')
 const ra = annotate(real)
 ok('Consent.dc.html: round trip is lossless', strip(ra) === real)
 ok('Consent.dc.html: <li> rows inside sc-for are addressable', /<li data-hub-pid="\d+" data-hub-h style="[^"]*\{\{s\.bd\}\}/.test(ra), ra.match(/<li[^>]*>/)?.[0])

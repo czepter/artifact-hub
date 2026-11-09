@@ -23,3 +23,11 @@ logs
 .env.*
 !.env.example
 tests/e2e/*.png
+
+# Parallel dev servers (HUB_BUILD_DIR) and local tool state
+.nuxt-*
+.impeccable/hook.cache.json
+.impeccable/mocks
+.impeccable/review
+.impeccable/build
+.claude/settings.local.json

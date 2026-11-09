@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 ui-sans-serif,system-ui,sans-serif;background:#f3f1ec;color:#14213d;display:grid;grid-template-columns:200px 1fr;min-height:100vh}
+aside{background:#14213d;color:#b8c0d4;padding:24px 18px}aside b{color:#fff;display:block;margin-bottom:20px;font-size:17px}aside a{display:block;padding:8px 10px;border-radius:8px;margin-bottom:2px}aside a.on{background:#ffffff1f;color:#fff}
+main{padding:28px 32px}h1{margin:0 0 20px;font-size:24px;letter-spacing:-.02em}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}.k{background:#fff;border-radius:12px;padding:16px;border:1px solid #e6e2d8}.k small{color:#5b6478}.k div{font-size:28px;font-weight:700;letter-spacing:-.02em}
+.card{background:#fff;border-radius:12px;padding:18px;border:1px solid #e6e2d8}.bars{display:flex;align-items:flex-end;gap:10px;height:150px;margin-top:12px}.bars i{flex:1;background:#14213d;border-radius:5px 5px 0 0;opacity:.85}.bars i:last-child{background:#e85d2f;opacity:1}
+</style></head><body>
+<aside><b>Northwind</b><a class="on">Overview</a><a>Projects</a><a>Team</a><a>Billing</a><a>Settings</a></aside>
+<main><h1>Overview</h1>
+<div class="kpis"><div class="k"><small>Active projects</small><div>12</div></div><div class="k"><small>Open tasks</small><div>48</div></div><div class="k"><small>Shipped this week</small><div>9</div></div></div>
+<div class="card"><b>Tasks completed per week</b><div class="bars"><i style="height:35%"></i><i style="height:48%"></i><i style="height:42%"></i><i style="height:62%"></i><i style="height:55%"></i><i style="height:78%"></i><i style="height:92%"></i></div></div>
+</main></body></html>
