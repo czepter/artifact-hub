@@ -6,7 +6,8 @@ import { deleteOps, detachBinds, groupKeys, nudgeOps, patchOps } from '#shared/c
 import type { NoteView } from '~/utils/canvasView'
 import type { SelRef } from '~/composables/useCanvasSelection'
 
-import { ArrowLeft, ArrowRight, Command, Crosshair, Lock, Maximize2, Minus, Play, Plus, X } from '@lucide/vue'
+import { ArrowLeft, ArrowRight, Command, Crosshair, Lock, Maximize2, Minus, Play, Plus, Workflow, X } from '@lucide/vue'
+import { type Transition, flowLines } from '#shared/protoFlow'
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Button } from '@/components/ui/button'
 import { boardKey, noteKey, refOfKey, useCanvasSelection } from '~/composables/useCanvasSelection'
@@ -209,6 +210,7 @@ function enterFocus(path: string, mode?: 'fit' | 'play') {
 
 function exitFocus() {
   laser.value = false
+  navStack.length = 0
   if (!focusBoard.value) return
   pulse()
   focusBoard.value = null
@@ -697,6 +699,19 @@ function onKey(e: KeyboardEvent) {
   handleKey({ key: e.key, code: e.code, shift: e.shiftKey })
 }
 
+/** A board plays its click dummy (timers, fresh component states) when it is the one in focus, or when the page is not a canvas. */
+const playsBoard = (path: string) => !isCanvas.value || focusBoard.value === path
+watch(focusBoard, () => { for (const b of boards.value) postTo(b.path, { type: 'hub:proto-play', enabled: playsBoard(b.path) }) })
+
+// ---- flow between boards (click-dummy hotspots and links), drawn on the canvas ------------------------------------------
+const showFlow = ref(false)
+const flow = computed(() => {
+  if (!showFlow.value || !props.data.flow?.length) return []
+  const boxes = new Map(boards.value.map(b => [b.path, { x: b.x, y: b.y, w: b.w, h: b.h }]))
+  return flowLines(props.data.flow, boxes, 14 / k.value)
+})
+const flowDash = (kind: string) => kind === 'open' ? '8 5' : kind === 'link' ? '2 5' : undefined
+
 // ---- frame messaging -------------------------------------------------------------------------
 function boardOfSource(src: MessageEventSource | null) {
   for (const [path, el] of frames) if (el.contentWindow === src) return boards.value.find(b => b.path === path)
@@ -718,15 +733,45 @@ function locate(path: string) {
   if (items.length) postTo(path, { type: 'hub:locate', items })
 }
 
+// ---- click dummy: history and transitions between boards ------------------------------------------------------------
+/** Boards left by a link or hotspot, newest last; "back" in a prototype returns to the last. */
+const navStack: string[] = []
+const TRANSITION_FRAMES: Record<Exclude<Transition, 'none'>, Keyframe[]> = {
+  'fade': [{ opacity: 0 }, { opacity: 1 }],
+  'slide-left': [{ opacity: 0, translate: '8% 0' }, { opacity: 1, translate: '0 0' }],
+  'slide-right': [{ opacity: 0, translate: '-8% 0' }, { opacity: 1, translate: '0 0' }],
+  'slide-up': [{ opacity: 0, translate: '0 8%' }, { opacity: 1, translate: '0 0' }],
+  'slide-down': [{ opacity: 0, translate: '0 -8%' }, { opacity: 1, translate: '0 0' }],
+}
+/** The board that was just shown eases in. Skipped for people who prefer reduced motion. */
+function playTransition(path: string, transition?: string) {
+  const t = (transition && transition in TRANSITION_FRAMES ? transition : transition === 'none' ? 'none' : 'fade') as Transition
+  if (t === 'none' || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  nextTick(() => requestAnimationFrame(() => {
+    const el = [...(viewport.value?.querySelectorAll<HTMLElement>('[data-board]') ?? [])].find(e => e.dataset.path === path)
+    el?.animate(TRANSITION_FRAMES[t], { duration: 260, easing: 'cubic-bezier(.2,.7,.2,1)' })
+  }))
+}
+function goBack(board: BoardView) {
+  const prev = navStack.pop()
+  if (prev && isCanvas.value && boards.value.some(b => b.path === prev)) { enterFocus(prev); playTransition(prev, 'slide-right'); return }
+  if (!isCanvas.value) postTo(board.path, { type: 'hub:history-back' })
+}
+
 /** A link clicked inside a board: another board gets the focus, another file loads in this frame, an external address opens in a new tab. */
-function navigateFrom(board: BoardView, href: string) {
+function navigateFrom(board: BoardView, href: string, transition?: string) {
   let u: URL
   try { u = new URL(href) } catch { return }
   const base = new URL(props.data.frameBase, location.origin)
   if (u.origin === base.origin && u.pathname.startsWith(base.pathname)) {
     let path: string
     try { path = u.pathname.slice(base.pathname.length).split('/').map(decodeURIComponent).join('/') } catch { return }
-    if (isCanvas.value && boards.value.some(b => b.path === path)) { enterFocus(path); return }
+    if (isCanvas.value && boards.value.some(b => b.path === path)) {
+      if (path !== board.path) navStack.push(board.path)
+      enterFocus(path)
+      playTransition(path, transition)
+      return
+    }
     if (revOf.value[path] !== undefined) { const el = frames.get(board.path); if (el) el.src = `${u.origin}${u.pathname}${u.search}` }
     return
   }
@@ -758,7 +803,9 @@ function onMessage(e: MessageEvent) {
       .then(result => reply({ ok: true, result: result ?? null }))
       .catch((err: any) => reply({ ok: false, error: err?.data?.statusMessage ?? err?.statusMessage ?? err?.message ?? 'request failed' }))
   } else if (d.type === 'hub:navigate' && typeof d.href === 'string') {
-    navigateFrom(board, d.href)
+    navigateFrom(board, d.href, typeof d.transition === 'string' ? d.transition : undefined)
+  } else if (d.type === 'hub:back') {
+    goBack(board)
   } else if (d.type === 'hub:escape') {
     emit('escape')
   } else if (d.type === 'hub:key' && typeof d.key === 'string') {
@@ -780,6 +827,7 @@ function onMessage(e: MessageEvent) {
   } else if (d.type === 'hub:ready') {
     postTo(board.path, { type: 'hub:comment-mode', enabled: props.commentMode })
     postTo(board.path, { type: 'hub:nav-keys', enabled: !!focusBoard.value })
+    postTo(board.path, { type: 'hub:proto-play', enabled: playsBoard(board.path) })
     if (props.editMode) { postTo(board.path, { type: 'hub:edit-mode', enabled: true }); postTo(board.path, { type: 'hub:edit-cmd', cmd: 'drag-mode', mode: props.dragMode ?? 'free' }) }
     locate(board.path)
   } else if (d.type === 'hub:layout') {
@@ -1008,6 +1056,14 @@ watch(isCanvas, () => nextTick(() => fit()))
         />
       </div>
 
+      <!-- flow between boards -->
+      <svg v-if="flow.length && !focusBoard" class="flow" overflow="visible" width="1" height="1" aria-hidden="true">
+        <g v-for="l in flow" :key="l.from + '>' + l.to" class="flow-line">
+          <path :d="l.d" fill="none" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linecap="round" :stroke-dasharray="flowDash(l.kind)" />
+          <polygon :points="l.head" />
+        </g>
+      </svg>
+
       <!-- notes and shapes sit above the boards -->
       <CanvasNote
         v-for="n in drawnNotes" :key="n.id" :n="n" :selected="selection.has(noteKey(n.id))" :editable="canvasLevel" :editing="editingNote === n.id" :hidden="!!focusBoard" :erasing="erased.includes(n.id)" :image-src="imageUrl(n)"
@@ -1060,6 +1116,7 @@ watch(isCanvas, () => nextTick(() => fit()))
     <LaserOverlay v-if="laser && focusBoard" />
     <ButtonGroup v-if="isCanvas && !focusBoard" class="zoom rounded-lg border bg-card shadow-md" data-ui>
       <Button v-if="canvasLevel" variant="ghost" size="icon-sm" aria-label="Command palette" title="Command palette (Ctrl K)" @click="emit('palette')"><Command /></Button>
+      <Button v-if="data.flow?.length" variant="ghost" size="icon-sm" :class="{ 'bg-accent': showFlow }" :aria-pressed="showFlow" aria-label="Show flow between boards" title="Show flow between boards (solid: go to, dashed: overlay, dotted: link)" @click="showFlow = !showFlow"><Workflow /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Present" title="Present the whole canvas" @click="emit('present')"><Play class="size-3 fill-current" /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Zoom out" @click="zoomAt(1 / 1.2)"><Minus /></Button>
       <Button class="pct tabular-nums" variant="ghost" size="sm" title="Fit all (0)" @click="fit(true)"><span ref="pctEl" /></Button>
@@ -1106,6 +1163,9 @@ watch(isCanvas, () => nextTick(() => fit()))
 .bind-hl { position: absolute; border: solid var(--brand); border-radius: 4px; pointer-events: none; box-sizing: border-box; z-index: 4; }
 .canvas.eraser, .canvas.eraser .board-shield { cursor: cell; }
 .lock-badge { position: absolute; width: 14px; height: 14px; padding: 2px; border-radius: 4px; background: #fff; color: var(--brand); box-shadow: 0 0 0 1px var(--brand); transform-origin: 100% 100%; pointer-events: none; z-index: 5; }
+.flow { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
+.flow-line path { stroke: var(--brand); }
+.flow-line polygon { fill: var(--brand); }
 .guide { position: absolute; background: var(--brand); pointer-events: none; z-index: 4; }
 .marquee { position: absolute; border: solid var(--brand); background: color-mix(in srgb, var(--brand) 8%, transparent); pointer-events: none; box-sizing: border-box; }
 .selbox { position: absolute; border: solid var(--brand); pointer-events: none; box-sizing: border-box; }

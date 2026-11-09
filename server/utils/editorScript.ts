@@ -126,6 +126,7 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
       parentId: par ? idOf(par) : null,
       canUp: !!siblingWithId(el, -1), canDown: !!siblingWithId(el, 1),
       attrs: { src: el.getAttribute('src'), href: el.getAttribute('href'), alt: el.getAttribute('alt'), placeholder: el.getAttribute('placeholder'), title: el.getAttribute('title'), id: el.getAttribute('id'), cls: el.getAttribute('class'), ariaLabel: el.getAttribute('aria-label') },
+      proto: { click: el.getAttribute('data-hub-click'), hover: el.getAttribute('data-hub-hover'), press: el.getAttribute('data-hub-press'), focus: el.getAttribute('data-hub-focus'), blur: el.getAttribute('data-hub-blur'), change: el.getAttribute('data-hub-change'), input: el.getAttribute('data-hub-input'), dismiss: el.getAttribute('data-hub-dismiss'), after: el.getAttribute('data-hub-after'), component: el.getAttribute('data-hub-component'), state: el.getAttribute('data-hub-state'), show: el.getAttribute('data-hub-show'), hide: el.getAttribute('data-hub-hide'), modal: el.getAttribute('data-hub-modal') },
       contrast: /\S/.test(el.textContent || '') && plain ? contrastOf(el, cs) : null,
       c: {
         color: cs.color, backgroundColor: cs.backgroundColor, fontSize: cs.fontSize, fontWeight: cs.fontWeight, textAlign: cs.textAlign,
@@ -597,7 +598,7 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
         emit({ type: 'style', id: m.id, set: m.set }); select(el); break;
       case 'attr':
         if (!el) return;
-        allById(m.id).forEach(function(t){ if (m.value === '' && (m.name === 'id' || m.name === 'class' || m.name === 'aria-label')) t.removeAttribute(m.name); else t.setAttribute(m.name, m.value); });
+        allById(m.id).forEach(function(t){ if (m.value === '' && (m.name === 'id' || m.name === 'class' || m.name === 'aria-label' || m.name.indexOf('data-hub-') === 0)) t.removeAttribute(m.name); else t.setAttribute(m.name, m.value); });
         emit({ type: 'attr', id: m.id, name: m.name, value: m.value }); select(el); break;
       case 'position':
         if (!el) return;

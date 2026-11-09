@@ -13,6 +13,7 @@ Everything is stored in one SQLite file on your own server.
 - **A review loop the AI takes part in.** Comments are pinned to an element on the page. The AI reads them, replies, fixes the page and resolves the thread.
 - **Versions.** Every change is saved as a new version. You can compare versions and go back.
 - **A canvas for boards.** Pages sit side by side on an infinite wall. Focus one, present them in order, or edit in place with layers and properties.
+- **Click dummies.** Wire boards into a clickable prototype with plain attributes or the editor's Prototype panel. Hotspots go to other boards with a transition and a back stack. Components have states for hover, press, focus and open, and selects, radios and checkboxes can drive them. Actions can depend on a field (`go:Cart.html if #email:valid & #terms:checked`). Dialogs, drawers, sheets and popovers open over a board, and a flow view draws the links between boards. Try it in play or present mode.
 - **Sharing.** View-only or comment links for guests, who need no account. Members have the role owner, editor or commenter.
 - **Control over the AI.** When you connect a tool, you choose what it may do: read, comment, publish and edit, or share. It never gets more rights than you have.
 - **Extras.** Interactive pages that store data, workspaces with files shared between boards, PNG and SVG export, and `.zip` export and import.

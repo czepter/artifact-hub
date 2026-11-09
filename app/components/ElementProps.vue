@@ -12,7 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
-const props = defineProps<{ sel: EditSel }>()
+const props = defineProps<{ sel: EditSel, boards?: { path: string, title: string }[], activeBoard?: string | null }>()
 const emit = defineEmits<{ cmd: [c: Record<string, unknown>], exportBoard: [] }>()
 
 const c = computed(() => props.sel.c)
@@ -36,6 +36,35 @@ const pxOf = (v: string) => (/^-?\d+(\.\d+)?$/.test(v) ? `${v}px` : v)
 const cpx = (prop: string, e: Event) => { const v = val(e); style({ [prop]: v === '' ? null : pxOf(v) }) }
 const NONE = '__none'
 const unNone = (v: unknown) => (v === NONE || v == null ? '' : String(v))
+// ---- click dummy ------------------------------------------------------------------------------------------------------
+/** Board paths as the active board's file would write them (relative to its folder). */
+const relBoards = computed(() => {
+  const from = (props.activeBoard ?? '').split('/').slice(0, -1)
+  return (props.boards ?? []).filter(b => b.path !== props.activeBoard).map((b) => {
+    const to = b.path.split('/'); let i = 0
+    while (i < from.length && i < to.length - 1 && from[i] === to[i]) i++
+    return { path: [...from.slice(i).map(() => '..'), ...to.slice(i)].join('/'), title: b.title }
+  })
+})
+const moreTriggers = ref(false)
+const proto = computed(() => props.sel.proto ?? { click: null, hover: null, press: null, focus: null, blur: null, change: null, input: null, after: null, component: null, state: null, show: null, hide: null, modal: null, dismiss: null })
+const MODALS: [string, string][] = [[NONE, 'Not an overlay'], ['dialog', 'Dialog (centred, dimmed)'], ['drawer-right', 'Drawer from the right'], ['drawer-left', 'Drawer from the left'], ['sheet', 'Sheet from the bottom'], ['popover', 'Popover under its opener'], ['free', 'Free (you place it)']]
+const modalKind = computed(() => (proto.value.modal === null ? NONE : proto.value.modal === '' ? 'dialog' : MODALS.some(m => m[0] === proto.value.modal) ? proto.value.modal! : 'dialog'))
+const setModal = (v: unknown) => setProto('modal', v === NONE ? '' : String(v))
+/** What closes or resets it: the attribute if set, else the overlay kind's default (drawers, sheets and popovers close on both). */
+const dismisses = computed(() => {
+  const a = proto.value.dismiss, m = proto.value.modal
+  if (a === null) return new Set(m && /^(drawer|sheet|popover)/.test(m) ? ['outside', 'escape'] : [])
+  if (a.trim() === '') return new Set(['outside', 'escape'])
+  return new Set(a.split(/\s+/).filter(x => x === 'outside' || x === 'escape'))
+})
+function setDismiss(what: 'outside' | 'escape', on: boolean) {
+  const next = new Set(dismisses.value)
+  if (on) next.add(what); else next.delete(what)
+  setProto('dismiss', next.size ? [...next].join(' ') : 'none')
+}
+const setProto = (name: string, value: string) => emit('cmd', { cmd: 'attr', name: `data-hub-${name}`, value })
+const protoText = (name: string, e: Event) => setProto(name, (e.target as HTMLInputElement).value.trim())
 const attr = (name: string, e: Event) => emit('cmd', { cmd: 'attr', name, value: (e.target as HTMLInputElement).value })
 
 // ---- size modes -----------------------------------------------------------------------------------
@@ -289,6 +318,46 @@ const fontOpen = ref(false)
         <Label v-if="editsAttr.placeholder" :class="lab"><span>Placeholder</span><Input :class="inp" :model-value="sel.attrs.placeholder ?? ''" @change="attr('placeholder', $event)" /></Label>
       </section>
     </template>
+
+    <Separator />
+
+    <section class="grid gap-2">
+      <h3 :class="h3">Prototype</h3>
+      <ProtoAction label="On click" :model-value="proto.click" :boards="relBoards" @update:model-value="setProto('click', $event)" />
+      <ProtoAction label="While hovering" :model-value="proto.hover" :boards="relBoards" @update:model-value="setProto('hover', $event)" />
+      <Collapsible v-model:open="moreTriggers" class="grid min-w-0 gap-2">
+        <CollapsibleTrigger as-child>
+          <Button variant="ghost" size="xs" class="h-auto w-full justify-between p-0 text-xs font-normal text-muted-foreground hover:bg-transparent" :aria-expanded="moreTriggers"><span>More triggers</span><component :is="moreTriggers ? Minus : Plus" /></Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent class="grid min-w-0 gap-2">
+          <ProtoAction label="While pressed" :model-value="proto.press" :boards="relBoards" @update:model-value="setProto('press', $event)" />
+          <ProtoAction label="While focused" :model-value="proto.focus" :boards="relBoards" @update:model-value="setProto('focus', $event)" />
+          <ProtoAction label="On change" :model-value="proto.change" :boards="relBoards" @update:model-value="setProto('change', $event)" />
+          <ProtoAction label="On every keystroke" :model-value="proto.input" :boards="relBoards" @update:model-value="setProto('input', $event)" />
+          <ProtoAction label="When focus leaves" :model-value="proto.blur" :boards="relBoards" @update:model-value="setProto('blur', $event)" />
+          <Label :class="lab"><span>After a delay (ms, then actions)</span><Input :class="inp" :model-value="proto.after ?? ''" placeholder="e.g. 1500 go:Home.html|fade" @change="protoText('after', $event)" /></Label>
+          <p :class="hint">Change fires for a select, radio, checkbox or field. In its actions, <code>{value}</code> is what the control holds: <code>state:Plan={value}</code>. A checkbox gives on or off.</p>
+        </CollapsibleContent>
+      </Collapsible>
+      <div class="grid grid-cols-2 gap-2">
+        <Label :class="lab"><span>Component</span><Input :class="inp" :model-value="proto.component ?? ''" placeholder="e.g. Menu" @change="protoText('component', $event)" /></Label>
+        <Label :class="lab"><span>Starts in state</span><Input :class="inp" :model-value="proto.state ?? ''" placeholder="e.g. closed tab:a" @change="protoText('state', $event)" /></Label>
+        <Label :class="lab"><span>Only in states</span><Input :class="inp" :model-value="proto.show ?? ''" placeholder="e.g. open tab:a" @change="protoText('show', $event)" /></Label>
+        <Label :class="lab"><span>Hidden in states</span><Input :class="inp" :model-value="proto.hide ?? ''" placeholder="e.g. closed" @change="protoText('hide', $event)" /></Label>
+      </div>
+      <Label :class="lab">
+        <span>Show as overlay</span>
+        <Select :model-value="modalKind" @update:model-value="setModal">
+          <SelectTrigger :class="trg" aria-label="Overlay kind"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem v-for="m in MODALS" :key="m[0]" :value="m[0]">{{ m[1] }}</SelectItem></SelectContent>
+        </Select>
+      </Label>
+      <template v-if="proto.modal !== null || proto.component">
+        <Label class="flex items-center gap-2 text-xs font-normal text-muted-foreground"><Checkbox :model-value="dismisses.has('outside')" @update:model-value="setDismiss('outside', !!$event)" /><span>Close or reset on a click outside</span></Label>
+        <Label class="flex items-center gap-2 text-xs font-normal text-muted-foreground"><Checkbox :model-value="dismisses.has('escape')" @update:model-value="setDismiss('escape', !!$event)" /><span>Close or reset on Esc</span></Label>
+      </template>
+      <p :class="hint">Press play on a board to try it. A click on empty space flashes the hotspots.</p>
+    </section>
 
     <Separator />
 

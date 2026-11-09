@@ -41,6 +41,32 @@ Publish \`canvas.json\` plus one HTML file per board:
 - is_interactive: false boards are static previews until the viewer double-clicks into them.
 - Edit one board or canvas.json with edit_file instead of republishing everything.
 
+## Click dummies (clickable prototypes across boards)
+Boards can be wired into a prototype with plain attributes, no script. People try it with PLAY or in focus/present mode; the flow button on the
+canvas draws the links between boards. Nothing runs while the owner edits or while comment mode is on.
+- Triggers (a value is actions separated by \`;\`): \`data-hub-click\`; \`data-hub-after="1500 ..."\` (that many ms after the board starts playing, for splash screens);
+  held triggers whose state changes revert afterwards: \`data-hub-hover\`, \`data-hub-press\` (while the button is down), \`data-hub-focus\` (while a field has focus);
+  control triggers: \`data-hub-change\` (select, radio, checkbox, text on commit; it works on a wrapper around several radios), \`data-hub-input\` (every keystroke), \`data-hub-blur\`.
+  In control triggers \`{value}\` is what the control holds (checkbox: on/off; radio: its value; select and text: the value), e.g. \`<select data-hub-change="state:Plan={value}">\`.
+- Actions: \`go:Detail.html|slide-left\` (another board; path relative to this board like a link; transitions: none, fade (default), slide-left, slide-right,
+  slide-up, slide-down), \`back\`, \`open:Sheet.html\` (another board as an overlay: give that board a transparent \`html,body\` and draw its own dimmed backdrop; it ends with \`close\`),
+  \`open:#panel\` (an element on this page marked \`data-hub-modal\`), \`close\`, \`state:Menu=open\` and \`toggle:Menu=open\` (component states, below).
+- Conditions: an action may end in \` if <tests>\` or \` unless <tests>\`; tests are joined by \`&\` and read \`<target>:<test>\`. Targets: \`#id\`, \`@name\` (a radio group or named
+  control), a component name, or empty/\`self\` (the control that fired). Tests: \`filled\`, \`empty\`, \`checked\`, \`unchecked\`, \`valid\`, \`invalid\` (HTML validation: required, type=email,
+  pattern, min/max, also on a whole form), \`=value\`, \`!=value\` (a component's \`=value\` asks whether it is in that state). A form that validates:
+  \`<button data-hub-click="go:Done.html if #f:valid & #terms:checked; state:Form=error unless #f:valid; state:Form=terms if #f:valid & #terms:unchecked">\`.
+- Component states: put \`data-hub-component="Menu" data-hub-state="closed"\` on a wrapper (the state it starts in). Inside it, \`data-hub-show="open"\` shows an element only in those states,
+  \`data-hub-hide="open closed"\` hides it in them (space or comma separated). A state is a list of tokens: a plain one (\`closed\`) is the main state, \`facet:value\` tokens are independent of it
+  and of each other, so one component can hold a tab and a dropdown: \`data-hub-state="tab:a menu:closed"\`, \`state:Menu.tab=b\`, \`toggle:Menu.menu=open\`, \`data-hub-show="menu:open"\`.
+  The wrapper's \`data-hub-state\` is also a CSS hook: \`[data-hub-state~="menu:open"] .panel { ... }\` with normal transitions. A target is a component name, \`#id\`, or empty for the nearest wrapper:
+  \`data-hub-click="toggle:=open"\`. A card with \`data-hub-component="Card" data-hub-state="rest" data-hub-hover="state:=hover" data-hub-press="state:=down"\` gets hover and pressed looks.
+- Overlays: \`data-hub-modal\` = \`dialog\` (default: centred on a dimmed backdrop), \`drawer-right\`, \`drawer-left\`, \`sheet\` (from the bottom) with slide-in animation and a dimmed backdrop,
+  \`popover\` (placed under the element that opened it, flips above if there is no room; opening it again from its opener closes it), or \`free\` (only shows and hides; you position it). The defaults
+  have no specificity, so your own class (width, background, radius) wins. \`data-hub-dismiss="outside escape"\` (empty = both, \`none\` = neither; drawers, sheets and popovers
+  default to both) closes an overlay on an outside click or Esc, and resets a component (a state-driven dropdown or flyout) to its starting state.
+- Keep each flow honest: every screen should have a way forward and a way back, and a hotspot should look like what it is (button, link, row).
+- Plain \`<a href>\` and \`data-nav\` between boards keep working and show up in the flow as dotted lines.
+
 ## Shared files (tokens, components, patterns across boards)
 Every workspace has a library of shared files that all of its artifacts and boards can use. A board links a library file as
 \`_shared/<path>\` relative to the artifact root: \`<link rel="stylesheet" href="_shared/tokens.css">\` (from a board in a subfolder
