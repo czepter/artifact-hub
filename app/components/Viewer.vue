@@ -304,7 +304,7 @@ function onEditTweaks(board: string, t: { defs: Record<string, unknown> | null, 
 function onTweakChange(values: Record<string, unknown>) {
   const board = activeBoard.value
   if (!board) return
-  canvasRef.value?.editCmd(board, { cmd: 'tweak-set', props: values }) // live preview in the board
+  canvasRef.value?.tweaksUpdate(board, values) // live preview in the board, no reload
   tweaksByBoard[board] = { defs: tweaksByBoard[board]?.defs ?? null, values }
   onCanvasOp({ type: 'updateBoard', path: board, patch: { tweaks: Object.keys(values).length ? values : null } }, 'tweak:' + board)
 }
@@ -332,6 +332,20 @@ async function exportBoard(path: string) {
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 2000)
   } catch (e: any) { onEditNote(errText(e, 'Could not download the board')) }
+}
+const templateBusy = ref(false), templateError = ref('')
+/** Template panel: loops, conditions, holes and attributes are source changes. Saved at once, then the board reloads and the element is selected again. */
+async function applyTemplate(p: { board: string, ops: Record<string, unknown>[] }) {
+  templateBusy.value = true; templateError.value = ''
+  const keep = sel.value?.id
+  try {
+    await flush()
+    for (const op of p.ops) onEditOp(p.board, op)
+    await flush()
+    if (editStatus.value === 'error') throw new Error(editMessage.value)
+    await resync([p.board])
+    if (keep) setTimeout(() => canvasRef.value?.editCmd(p.board, { cmd: 'select', id: keep }), 700)
+  } catch (e: any) { templateError.value = e?.message && !e?.data ? e.message : errText(e, 'Could not apply the change') } finally { templateBusy.value = false }
 }
 async function applyCode(p: { mode: 'element' | 'file', path: string, id: string | null, text: string }) {
   codeBusy.value = true; codeError.value = ''
@@ -972,6 +986,10 @@ useHead(() => ({ title: data.value ? `${data.value.artifact.title} · Artifact H
         :tweaks="activeTweaks"
         :code-busy="codeBusy"
         :code-error="codeError"
+        :template-busy="templateBusy"
+        :template-error="templateError"
+        :flush-edits="flush"
+        @template-apply="applyTemplate"
         @cmd="panelCmd"
         @add="addElement"
         @drag="startPaletteDrag"

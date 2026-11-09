@@ -15,7 +15,9 @@ import {
  * In-frame bridge. Speaks a small postMessage protocol with the host viewer:
  *   host -> frame  hub:comment-mode {enabled}
  *                  hub:locate {items:[{id, selector, text}]}
- *   frame -> host  hub:ready | hub:layout | hub:target {anchor} | hub:located {items:[{id, rect|null}]} | hub:navigate {href}
+ *                  hub:tweaks-update {values}   live tweak values for a Design Component board (handled by its runtime)
+ *                  hub:tweaks-request           ask the board to announce its tweaks again
+ *   frame -> host  hub:ready | hub:layout | hub:target {anchor} | hub:located {items:[{id, rect|null}]} | hub:navigate {href} | hub:tweaks-ready {defs, values}
  * Unlike Open Design's own bridge (which only targets elements the agent tagged with data-od-id),
  * this one anchors to any element via a stable CSS path plus a text fingerprint.
  */
@@ -102,6 +104,9 @@ const BRIDGE = String.raw`<script data-hub-bridge>(function(){
   // focuses the target board, loads the page in this frame or opens a new tab. Anchors (#x) and links the page handled itself are left alone.
   document.addEventListener('click', function(ev){
     if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+    // Any element can navigate between boards with data-nav="Other.dc.html" (resolved against this page), e.g. a table row opening its detail board.
+    var nv = ev.target && ev.target.closest ? ev.target.closest('[data-nav]') : null;
+    if (nv && !nv.closest('a[href]')) { try { ev.preventDefault(); post({ type: 'hub:navigate', href: new URL(nv.getAttribute('data-nav'), document.baseURI).href }); } catch (_) {} return; }
     var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null; if (!a) return;
     var raw = a.getAttribute('href');
     if (!raw || raw.charAt(0) === '#' || /^(mailto|tel|javascript|blob|data):/i.test(raw) || a.hasAttribute('download')) return;
@@ -189,11 +194,13 @@ function ensureDocument(source: string): string {
  * Inject guards + comment bridge into an artifact HTML file. Uses Open Design's tag-aware
  * helpers so injection points inside comments, scripts or attribute values are never matched.
  */
-export function instrumentHtml(source: string, opts: { props?: Record<string, unknown> } = {}): string {
+export function instrumentHtml(source: string, opts: { props?: Record<string, unknown>, path?: string, isDc?: boolean } = {}): string {
   let doc = ensureDocument(source)
+  const isDc = opts.isDc || (opts.path && opts.path.endsWith('.dc.html')) || /<x-dc\b/i.test(source)
+  const dcSupport = isDc && !/support\.js/i.test(doc) ? '<script src="./support.js"></script>' : ''
   // Saved tweak values for this board (window.__dcProps), JSON escaped so it can never end the script element.
   const props = opts.props && Object.keys(opts.props).length ? `<script data-hub-props>window.__dcProps=${JSON.stringify(opts.props).replace(/</g, '\\u003c')};</script>` : ''
-  const guards = buildPreviewVisibilityGuard() + buildPreviewSandboxShim() + buildPreviewRedirectGuard() + ARTIFACT_API + props
+  const guards = buildPreviewVisibilityGuard() + buildPreviewSandboxShim() + buildPreviewRedirectGuard() + ARTIFACT_API + props + dcSupport
   const headEnd = findRealTagEnd(doc, HTML_TAG_PATTERNS.headOpen)
   if (headEnd >= 0) {
     doc = doc.slice(0, headEnd) + guards + doc.slice(headEnd)

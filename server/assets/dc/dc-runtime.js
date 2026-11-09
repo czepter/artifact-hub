@@ -7,7 +7,8 @@
  *
  * Supported: dotted-path holes and literals, interpolated attributes, camelCase events, state/setState and the
  * React class lifecycle, sc-for ($index), sc-if, dc-import (fetches Name.dc.html next to the page), helmet,
- * data-props, links between boards (plain relative hrefs; the host serves every board).
+ * data-props, links between boards (plain relative hrefs, or data-nav="Other.html" on any element; the host serves every board),
+ * live tweaks (hub:tweaks-update / hub:tweaks-ready) and a prefetch worker for imports.
  * Not supported: the editor (properties panel, tweaks UI), print/PDF flow, design-system mounting (x-import).
  */
 (function () {
@@ -215,7 +216,7 @@
     var tpl = this.constructor.__dcTemplate
     if (!tpl) return null
     var vals = this.renderVals() || {}
-    return h.apply(null, [Fragment, null].concat(tpl(Object.assign({}, vals))))
+    return h.apply(null, [Fragment, null].concat(tpl(Object.assign({}, this.props, vals))))
   }
   window.DCLogic = DCLogic
 
@@ -236,29 +237,96 @@
   /** Turn a parsed document into a component class. */
   function componentFromDocument(doc, evalDoc) {
     var xdc = doc.querySelector('x-dc')
+    if (!xdc) throw new Error('not a .dc.html document (missing <x-dc>)')
     var script = doc.querySelector('script[type="text/x-dc"][data-dc-script]')
-    if (!xdc || !script) throw new Error('not a .dc.html document (missing <x-dc> or the data-dc-script block)')
     applyHelmet(xdc.querySelector('helmet'))
     var template = compileChildren(xdc)
-    var Cls = new Function('DCLogic', 'React', 'ReactDOM', script.textContent + '\n;return typeof Component !== "undefined" ? Component : null')(DCLogic, React, ReactDOM)
-    if (typeof Cls !== 'function') throw new Error('the script block must define `class Component extends DCLogic`')
+    var Cls = null
+    if (script && script.textContent.trim()) {
+      Cls = new Function('DCLogic', 'React', 'ReactDOM', script.textContent + '\n;return typeof Component !== "undefined" ? Component : null')(DCLogic, React, ReactDOM)
+    }
+    if (typeof Cls !== 'function') {
+      Cls = function DefaultComponent(props, context) { DCLogic.call(this, props, context) }
+      Cls.prototype = Object.create(DCLogic.prototype)
+      Cls.prototype.constructor = Cls
+    }
     Cls.__dcTemplate = template
-    try { Cls.__dcProps = JSON.parse(script.getAttribute('data-props') || '{}') } catch (e) { Cls.__dcProps = {} }
+    var defaultProps = {}
+    try {
+      var raw = script ? script.getAttribute('data-props') : null
+      var defs = raw ? JSON.parse(raw) : {}
+      Cls.__dcDefs = defs
+      Object.keys(defs).forEach(function (k) {
+        if (defs[k] && defs[k].default !== undefined) defaultProps[k] = defs[k].default
+      })
+    } catch (e) {
+      Cls.__dcDefs = {}
+    }
+    Cls.__dcProps = defaultProps
     return Cls
   }
 
-  var importCache = {}
-  function loadComponent(name) {
-    var url = new URL(name + '.dc.html', document.baseURI).href
-    if (!importCache[url]) {
-      importCache[url] = fetch(url).then(function (r) {
-        if (!r.ok) throw new Error('dc-import "' + name + '": ' + r.status)
+  // ---- imports -------------------------------------------------------------------------------
+  // `<dc-import name="buttons">` loads buttons.dc.html next to the page; a name may carry a folder ("ds/components")
+  // or a full file name. Texts come from the prefetch worker when it has them (see prefetch below), else from fetch().
+  function importUrl(name) {
+    var file = /\.html?$/i.test(name) ? name : name + '.dc.html'
+    return new URL(file, document.baseURI).href
+  }
+  var importCache = {}, prefetched = Promise.resolve({})
+  function fetchText(url) {
+    return prefetched.then(function (map) {
+      if (map[url] != null) return map[url]
+      return fetch(url).then(function (r) {
+        if (!r.ok) throw new Error('dc-import "' + url.split('/').pop() + '": ' + r.status)
         return r.text()
-      }).then(function (html) {
+      })
+    })
+  }
+  function loadComponent(name) {
+    var url = importUrl(name)
+    if (!importCache[url]) {
+      importCache[url] = fetchText(url).then(function (html) {
         return componentFromDocument(new DOMParser().parseFromString(html, 'text/html'))
       })
     }
     return importCache[url]
+  }
+
+  // Background worker: fetches every statically named import (and the imports of those, transitively) in parallel and
+  // off the main thread, so a board with many components does not wait on a chain of requests. It only moves network
+  // and scanning work; parsing needs the DOM and stays on the page. Without Worker/Blob support nothing is prefetched.
+  function workerMain() {
+    self.onmessage = function (e) {
+      var out = {}, seen = {}
+      function fileOf(n) { return /\.html?$/i.test(n) ? n : n + '.dc.html' }
+      function run(u) {
+        if (seen[u]) return Promise.resolve()
+        seen[u] = 1
+        return fetch(u).then(function (r) { return r.ok ? r.text() : null }).then(function (t) {
+          if (t == null) return
+          out[u] = t
+          var re = /<dc-import\b[^>]*?\bname\s*=\s*["']([^"'{}]+)["']/gi, m, subs = []
+          while ((m = re.exec(t))) { try { subs.push(new URL(fileOf(m[1]), e.data.base).href) } catch (_) {} }
+          return Promise.all(subs.map(run))
+        }).catch(function () {})
+      }
+      Promise.all(e.data.urls.map(run)).then(function () { self.postMessage(out) })
+    }
+  }
+  function startPrefetch(names) {
+    if (!names.length || typeof Worker === 'undefined' || typeof Blob === 'undefined' || !window.URL || !URL.createObjectURL) return
+    prefetched = new Promise(function (resolve) {
+      try {
+        var src = '(' + workerMain.toString() + ')()'
+        var blobUrl = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }))
+        var w = new Worker(blobUrl)
+        var done = function (m) { try { w.terminate(); URL.revokeObjectURL(blobUrl) } catch (_) {} resolve(m || {}) }
+        w.onmessage = function (e) { done(e.data) }
+        w.onerror = function () { done({}) }
+        w.postMessage({ base: document.baseURI, urls: names.map(importUrl) })
+      } catch (_) { resolve({}) }
+    })
   }
 
   function DCImport(p) {
@@ -271,7 +339,8 @@
     }, [p.name])
     if (err) return h('div', { style: { color: '#b3261e', font: '12px monospace' } }, String(err.message || err))
     if (!Comp) return h('div', { style: { width: p.hintW || undefined, height: p.hintH || undefined } })
-    return h(Comp, p.childProps)
+    // The imported component's own data-props defaults apply under what the importer passes.
+    return h(Comp, Object.assign({}, Comp.__dcProps || {}, p.childProps))
   }
 
   // ---- boot ----------------------------------------------------------------------------------
@@ -289,13 +358,37 @@
     var root = document.querySelector('x-dc')
     if (!root) return
     try {
+      var names = []
+      Array.prototype.forEach.call(root.querySelectorAll('dc-import[name]'), function (n) {
+        var v = n.getAttribute('name'); if (v && v.indexOf('{{') < 0 && names.indexOf(v) < 0) names.push(v)
+      })
+      startPrefetch(names)
       var Cls = componentFromDocument(document)
       root.innerHTML = ''
       var mount = ReactDOM.createRoot(root)
       // Tweak values chosen in the editor arrive as window.__dcProps (injected before this script runs) and can be
       // changed live with window.__dcSetProps(props): the root component simply re-renders with new props.
-      ReactDOM.flushSync(function () { mount.render(h(Cls, window.__dcProps || {})) })
-      window.__dcSetProps = function (p) { window.__dcProps = p || {}; ReactDOM.flushSync(function () { mount.render(h(Cls, window.__dcProps)) }) }
+      var initialProps = Object.assign({}, Cls.__dcProps || {}, window.__dcProps || {})
+      window.__dcProps = initialProps
+      ReactDOM.flushSync(function () { mount.render(h(Cls, initialProps)) })
+      // Live tweaks: React diffs the new props against the rendered tree, so only DOM nodes whose output changed are
+      // touched (a changed {{accent}} updates those inline styles and nothing else); an unchanged update renders nothing.
+      window.__dcSetProps = function (p) {
+        var next = Object.assign({}, window.__dcProps || {}, p || {}), changed = false
+        Object.keys(next).forEach(function (k) { if (JSON.stringify(next[k]) !== JSON.stringify((window.__dcProps || {})[k])) changed = true })
+        window.__dcProps = next
+        if (changed) ReactDOM.flushSync(function () { mount.render(h(Cls, next)) })
+        return changed
+      }
+      // Host <-> frame: hub:tweaks-update {values} in, hub:tweaks-ready {defs, values} out (also after every update).
+      var announce = function () { try { window.parent.postMessage({ type: 'hub:tweaks-ready', defs: Cls.__dcDefs || {}, values: window.__dcProps }, '*') } catch (_) {} }
+      window.addEventListener('message', function (e) {
+        var d = e.data
+        if (!d || typeof d.type !== 'string') return
+        if (d.type === 'hub:tweaks-update' && d.values && typeof d.values === 'object') { window.__dcSetProps(d.values); announce() }
+        else if (d.type === 'hub:tweaks-request') announce()
+      })
+      announce()
       root.setAttribute('data-dc-ready', '')
       window.__dcRoot = mount
     } catch (e) { showError(root, e) }

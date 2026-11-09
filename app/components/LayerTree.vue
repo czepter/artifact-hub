@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 export interface TreeNode { id: string | null, tag: string, label: string, free?: boolean, kids: TreeNode[] }
 
 const props = defineProps<{ node: TreeNode, depth: number, selectedId: string | null, open: Set<string> }>()
-const emit = defineEmits<{ select: [id: string], hover: [id: string | null], toggle: [id: string] }>()
+const emit = defineEmits<{ select: [id: string, extend?: boolean], hover: [id: string | null], toggle: [id: string] }>()
 
 const isOpen = computed(() => !!props.node.id && props.open.has(props.node.id))
 const hasKids = computed(() => props.node.kids.length > 0)
@@ -17,7 +17,7 @@ const hasKids = computed(() => props.node.kids.length > 0)
       class="row"
       :class="{ sel: node.id === selectedId }"
       :style="{ paddingLeft: 6 + depth * 12 + 'px' }"
-      @click="emit('select', node.id)"
+      @click="emit('select', node.id, $event.shiftKey)"
       @mouseenter="emit('hover', node.id)"
       @mouseleave="emit('hover', null)"
     >
@@ -28,7 +28,7 @@ const hasKids = computed(() => props.node.kids.length > 0)
       <span v-if="node.free" class="free" title="Freely positioned">◆</span>
     </div>
     <ul v-if="hasKids && (isOpen || !node.id)" role="group" class="kids">
-      <LayerTree v-for="(k, i) in node.kids" :key="(k.id ?? '') + i" :node="k" :depth="node.id ? depth + 1 : depth" :selected-id="selectedId" :open="open" @select="emit('select', $event)" @hover="emit('hover', $event)" @toggle="emit('toggle', $event)" />
+      <LayerTree v-for="(k, i) in node.kids" :key="(k.id ?? '') + i" :node="k" :depth="node.id ? depth + 1 : depth" :selected-id="selectedId" :open="open" @select="(i, x) => emit('select', i, x)" @hover="emit('hover', $event)" @toggle="emit('toggle', $event)" />
     </ul>
   </li>
 </template>

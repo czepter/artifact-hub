@@ -118,6 +118,20 @@ export type Op =
   | { type: 'move', id: string, otherId: string }
   | { type: 'replace', id: string, html: string }
   | { type: 'moveTo', id: string, target: { id: string, position: 'before' | 'after' | 'inside' } }
+  /** Wraps sibling elements (and whatever lies between them) in a new <div data-hub-id=id>. `style` is the wrapper's inline style. */
+  | { type: 'group', ids: string[], id: string, style?: string }
+  /** Replaces a wrapper element by its content. */
+  | { type: 'ungroup', id: string }
+  /** Any attribute of an element, including ones bound to template data ({{hole}}); null removes it. */
+  | { type: 'tattr', id: string, name: string, value: string | null }
+  /** Edits the list/as (sc-for) or value (sc-if) of the `level`-th nearest ancestor directive of that kind. */
+  | { type: 'directive', id: string, kind: DirectiveKind, level?: number, set: Record<string, string> }
+  /** Wraps one element in a new <sc-for> or <sc-if>. */
+  | { type: 'wrapDirective', id: string, kind: DirectiveKind, attrs?: Record<string, string> }
+  /** Removes an ancestor <sc-for>/<sc-if> but keeps what is inside it. */
+  | { type: 'unwrapDirective', id: string, kind: DirectiveKind, level?: number }
+
+export type DirectiveKind = 'sc-for' | 'sc-if'
 
 const STYLE_PROP = /^(--[a-z0-9-]{1,40}|[a-z][a-z0-9-]{0,48})$/
 const STYLE_VALUE_BAD = /[;{}<>\\\r\n]/
@@ -138,6 +152,43 @@ function splitDecls(css: string): string[] {
   }
   if (cur.trim()) out.push(cur)
   return out.map(d => d.trim()).filter(Boolean)
+}
+
+// ---- template (code-driven) helpers --------------------------------------------------------------------
+// Holes are evaluated by the runtime as dotted paths or literals only, never as code, so they are safe to author here.
+const HOLE = /\{\{\s*([^{}<>]{1,120}?)\s*\}\}/g
+const holesOk = (s: string) => !s.replace(HOLE, '').match(/\{\{|\}\}/)
+const PATH_REF = /^\{\{\s*[A-Za-z_$][\w$]*(\.[\w$]+)*\s*\}\}$/
+const IDENT = /^[A-Za-z_$][\w$]{0,40}$/
+const DIRECTIVE_ATTRS: Record<DirectiveKind, string[]> = { 'sc-for': ['list', 'as'], 'sc-if': ['value'] }
+const GROUPABLE = new Set(['div', 'section', 'article', 'aside', 'header', 'footer', 'main', 'nav', 'span', 'figure'])
+const LIST_PARENTS = new Set(['ul', 'ol', 'dl', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'colgroup', 'select', 'optgroup', 'datalist', 'menu'])
+const hasHole = (s: string) => /\{\{/.test(s)
+
+function checkDirectiveAttr(kind: DirectiveKind, name: string, value: string) {
+  if (!DIRECTIVE_ATTRS[kind].includes(name)) throw new EditError(400, `<${kind}> has no attribute ${name}`)
+  if (typeof value !== 'string' || value.length > 200) throw new EditError(400, 'Invalid value')
+  if (name === 'as') { if (!IDENT.test(value)) throw new EditError(400, 'A loop variable is a plain name, e.g. item'); return }
+  if (!PATH_REF.test(value) && !(kind === 'sc-if' && /^(true|false)$/.test(value))) throw new EditError(400, 'Use a data path in braces, e.g. {{items}} or {{user.name}}')
+}
+
+function ancestorsOf(el: El, kind: string): El[] {
+  const out: El[] = []
+  for (let p = el.parent; p; p = p.parent) if (p.name === kind) out.push(p)
+  return out
+}
+
+/** Inline style text for a new element, checked like the style operation. */
+function cleanStyle(style: string): string {
+  const decls = splitDecls(style)
+  if (decls.length > 40) throw new EditError(400, 'Invalid style')
+  for (const d of decls) {
+    const i = d.indexOf(':')
+    const prop = d.slice(0, i).trim().toLowerCase(), val = d.slice(i + 1).trim()
+    if (i < 0 || !STYLE_PROP.test(prop)) throw new EditError(400, `Invalid style property: ${prop}`)
+    if (!val || val.length > 300 || STYLE_VALUE_BAD.test(val)) throw new EditError(400, `Invalid value for ${prop}`)
+  }
+  return decls.join('; ')
 }
 
 const escAttr = (v: string) => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
@@ -234,8 +285,11 @@ export function applyEdits(source: string, ops: Op[]): { source: string, applied
         const el = need(op, byId)
         if (!el) { skip('element not found'); continue }
         if (el.endTagStart === null || VOID.has(el.name)) throw new EditError(422, `<${el.name}> has no editable text`)
-        if (src.slice(el.startTagEnd, el.endTagStart).includes('{{')) throw new EditError(422, 'This text is bound to template data and cannot be edited here')
         if (typeof op.html !== 'string') throw new EditError(400, 'Invalid text')
+        const inner = src.slice(el.startTagEnd, el.endTagStart)
+        // Text bound to template data ({{holes}}) is edited as template text: the holes stay, but only when nothing but inline markup is inside.
+        if (hasHole(inner) && /<\/?(?!(?:b|strong|i|em|u|br|a)\b)[a-z]/i.test(inner)) throw new EditError(422, 'This element mixes data with other elements; edit its code instead')
+        if (hasHole(op.html) && !holesOk(op.html)) throw new EditError(400, 'A data hole is not closed: write {{name}}')
         splices = [{ from: el.startTagEnd, to: el.endTagStart, text: sanitizeInline(op.html) }]
         break
       }
@@ -323,6 +377,82 @@ export function applyEdits(source: string, ops: Op[]): { source: string, applied
         splices = [{ from: el.start, to: el.end, text: '' }, { from: at, to: at, text: pos === 'after' ? `\n${slice}` : `${slice}\n` }]
         break
       }
+      case 'group': {
+        if (!Array.isArray(op.ids) || !op.ids.length || op.ids.length > 64) throw new EditError(400, 'Choose between 1 and 64 elements to group')
+        if (typeof op.id !== 'string' || !ID_RE.test(op.id) || byId.has(op.id)) throw new EditError(400, 'Invalid or duplicate id for the group')
+        const found = op.ids.map(i => (typeof i === 'string' ? byId.get(i) : undefined))
+        if (found.some(e => !e)) { skip('an element was not found'); continue }
+        let members = found as El[]
+        members = members.filter(m => !members.some(o => o !== m && o.start <= m.start && o.end >= m.end))
+        const parent = members[0]!.parent
+        if (members.some(m => m.parent !== parent)) throw new EditError(422, 'Only elements with the same parent can be grouped')
+        if (parent && LIST_PARENTS.has(parent.name)) throw new EditError(422, `Items of a <${parent.name}> cannot be grouped`)
+        if (members.some(m => m.inHead || /^(li|tr|td|th|option|dt|dd|thead|tbody|tfoot|caption|col|colgroup)$/.test(m.name))) throw new EditError(422, 'These elements cannot be wrapped in a group')
+        members.sort((a, b) => a.start - b.start)
+        const first = members[0]!, last = members[members.length - 1]!
+        const style = op.style ? cleanStyle(op.style) : ''
+        splices = [
+          { from: first.start, to: first.start, text: `<div data-hub-id="${op.id}"${style ? ` style="${escAttr(style)}"` : ''}>\n` },
+          { from: last.end, to: last.end, text: '\n</div>' },
+        ]
+        break
+      }
+      case 'ungroup': {
+        const el = need(op, byId)
+        if (!el) { skip('element not found'); continue }
+        if (el.endTagStart === null || !GROUPABLE.has(el.name)) throw new EditError(422, `<${el.name}> cannot be ungrouped`)
+        splices = [{ from: el.start, to: el.startTagEnd, text: '' }, { from: el.endTagStart, to: el.end, text: '' }]
+        break
+      }
+      case 'tattr': {
+        const el = need(op, byId)
+        if (!el) { skip('element not found'); continue }
+        const name = String(op.name ?? '').toLowerCase()
+        if (!/^[a-z][\w:.-]{0,60}$/.test(name) || name === 'srcdoc' || name === 'data-hub-id' || name === 'data-hub-pid') throw new EditError(400, `Attribute not editable: ${name}`)
+        if (op.value !== null && (typeof op.value !== 'string' || op.value.length > 2000)) throw new EditError(400, 'Invalid attribute value')
+        const v = op.value
+        if (v !== null) {
+          if (hasHole(v) && !holesOk(v)) throw new EditError(400, 'A data hole is not closed: write {{name}}')
+          // Event handlers are template functions: only a single reference such as onclick="{{open}}" is allowed, never code.
+          if (name.startsWith('on') && !PATH_REF.test(v)) throw new EditError(400, `${name} takes one reference, e.g. {{handler}}`)
+          if ((name === 'src' || name === 'href' || name === 'action' || name === 'formaction') && !hasHole(v) && v !== '' && !safeUrl(v, name === 'src' ? 'src' : 'href')) throw new EditError(400, `Not an allowed ${name}`)
+          if (name === 'style' && !hasHole(v)) cleanStyle(v)
+        }
+        splices = [attrSplice(src, el, name, v === '' && name !== 'value' && name !== 'alt' ? null : v)]
+        break
+      }
+      case 'directive': {
+        const el = need(op, byId)
+        if (!el) { skip('element not found'); continue }
+        if (op.kind !== 'sc-for' && op.kind !== 'sc-if') throw new EditError(400, 'Unknown directive')
+        const d = ancestorsOf(el, op.kind)[op.level ?? 0]
+        if (!d) { skip(`no <${op.kind}> around the element`); continue }
+        const entries = Object.entries(op.set ?? {})
+        if (!entries.length) throw new EditError(400, 'Nothing to set')
+        for (const [k, v] of entries) checkDirectiveAttr(op.kind, k, v)
+        splices = entries.map(([k, v]) => attrSplice(src, d, k, v))
+        break
+      }
+      case 'wrapDirective': {
+        const el = need(op, byId)
+        if (!el) { skip('element not found'); continue }
+        if (op.kind !== 'sc-for' && op.kind !== 'sc-if') throw new EditError(400, 'Unknown directive')
+        if (el.parent && LIST_PARENTS.has(el.parent.name) && /^(tr|td|th|li|option)$/.test(el.name)) throw new EditError(422, `A <${el.name}> cannot be wrapped here; edit its code instead`)
+        const a = op.kind === 'sc-for' ? { list: '{{items}}', as: 'item', ...(op.attrs ?? {}) } : { value: '{{show}}', ...(op.attrs ?? {}) }
+        for (const [k, v] of Object.entries(a)) checkDirectiveAttr(op.kind, k, v)
+        const open = `<${op.kind} ${Object.entries(a).map(([k, v]) => `${k}="${escAttr(v)}"`).join(' ')}>`
+        splices = [{ from: el.start, to: el.start, text: `${open}\n` }, { from: el.end, to: el.end, text: `\n</${op.kind}>` }]
+        break
+      }
+      case 'unwrapDirective': {
+        const el = need(op, byId)
+        if (!el) { skip('element not found'); continue }
+        if (op.kind !== 'sc-for' && op.kind !== 'sc-if') throw new EditError(400, 'Unknown directive')
+        const d = ancestorsOf(el, op.kind)[op.level ?? 0]
+        if (!d || d.endTagStart === null) { skip(`no <${op.kind}> around the element`); continue }
+        splices = [{ from: d.start, to: d.startTagEnd, text: '' }, { from: d.endTagStart, to: d.end, text: '' }]
+        break
+      }
       default:
         throw new EditError(400, `Unknown operation: ${(op as { type: string }).type}`)
     }
@@ -339,4 +469,51 @@ export function getElementSource(source: string, id: string): { html: string, so
   const withIds = ensureIds(source)
   const el = walk(withIds).find(e => e.attrs['data-hub-id']?.value === id)
   return el ? { html: withIds.slice(el.start, el.end), source: withIds } : null
+}
+
+export interface TemplateInfo {
+  /** The board is a Design Component (<x-dc>), so holes and directives are live. */
+  dc: boolean
+  tag: string
+  /** Directives around the element, nearest first. `level` counts per kind (0 = the nearest of that kind). */
+  directives: { kind: DirectiveKind, level: number, attrs: Record<string, string> }[]
+  /** The element's own content when it holds no other elements (text, holes, inline marks), else null. */
+  text: { source: string, hasHoles: boolean } | null
+  attrs: { name: string, value: string, hole: boolean }[]
+  /** Names usable inside {{ }} here: data-props, loop variables. */
+  scope: { props: string[], vars: string[] }
+}
+
+/** What makes an element "code-driven": loops and conditions around it, holes in its text and attributes. For the Template panel. */
+export function getTemplateInfo(source: string, id: string): TemplateInfo | null {
+  if (!ID_RE.test(id)) return null
+  const withIds = ensureIds(source)
+  const els = walk(withIds)
+  const el = els.find(e => e.attrs['data-hub-id']?.value === id)
+  if (!el) return null
+  const counts: Record<string, number> = {}
+  const directives: TemplateInfo['directives'] = []
+  const vars: string[] = []
+  for (let p = el.parent; p; p = p.parent) {
+    if (p.name !== 'sc-for' && p.name !== 'sc-if') continue
+    const kind = p.name as DirectiveKind
+    const attrs: Record<string, string> = {}
+    for (const k of DIRECTIVE_ATTRS[kind]) attrs[k] = p.attrs[k]?.value ?? ''
+    directives.push({ kind, level: counts[kind] ?? 0, attrs })
+    counts[kind] = (counts[kind] ?? 0) + 1
+    if (kind === 'sc-for') vars.push(attrs.as || 'item')
+  }
+  if (vars.length) vars.push('$index', '$first', '$last')
+  let props: string[] = []
+  const sc = els.find(e => e.name === 'script' && e.attrs['data-props'])
+  if (sc) { try { props = Object.keys(JSON.parse(sc.attrs['data-props']!.value)) } catch { /* ignore broken data-props */ } }
+  let text: TemplateInfo['text'] = null
+  if (el.endTagStart !== null && !VOID.has(el.name)) {
+    const inner = withIds.slice(el.startTagEnd, el.endTagStart)
+    if (!/<\/?(?!(?:b|strong|i|em|u|br|a)\b)[a-z]/i.test(inner)) text = { source: inner, hasHoles: hasHole(inner) }
+  }
+  const attrs = Object.entries(el.attrs)
+    .filter(([n]) => n !== 'data-hub-id' && n !== 'data-hub-pid')
+    .map(([name, a]) => ({ name, value: a.value, hole: hasHole(a.value) }))
+  return { dc: els.some(e => e.name === 'x-dc'), tag: el.name, directives, text, attrs, scope: { props, vars } }
 }
