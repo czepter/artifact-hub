@@ -36,6 +36,7 @@ const emit = defineEmits<{
   target: [payload: { board: string, anchor: Anchor }]
   select: [id: string]
   deselect: []
+  escape: []
   pinsChanged: [located: Record<string, boolean>]
   focusChange: [path: string | null]
   editSelect: [board: string, info: Record<string, unknown> | null]
@@ -758,6 +759,8 @@ function onMessage(e: MessageEvent) {
       .catch((err: any) => reply({ ok: false, error: err?.data?.statusMessage ?? err?.statusMessage ?? err?.message ?? 'request failed' }))
   } else if (d.type === 'hub:navigate' && typeof d.href === 'string') {
     navigateFrom(board, d.href)
+  } else if (d.type === 'hub:escape') {
+    emit('escape')
   } else if (d.type === 'hub:key' && typeof d.key === 'string') {
     handleKey({ key: d.key, code: typeof d.code === 'string' ? d.code : undefined, mod: !!d.mod, shift: !!d.shift, alt: !!d.alt })
   } else if (d.type === 'hub:edit-select') {
