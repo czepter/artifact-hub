@@ -79,6 +79,7 @@ function addBoard() {
           <div class="grid gap-1.5"><Label>Height</Label><Input class="h-8" type="number" min="40" :model-value="board.h" @change="patchBoard({ h: num($event) })" /></div>
         </div>
         <Label class="font-normal"><Checkbox :model-value="!!board.is_interactive" @update:model-value="patchBoard({ is_interactive: !!$event })" />Working controls (can be used on the canvas)</Label>
+        <Label class="font-normal"><Checkbox :model-value="!!board.autosize" @update:model-value="patchBoard({ autosize: !!$event })" />Size follows the content</Label>
         <Label class="font-normal"><Checkbox :model-value="board.expand === 'fill'" @update:model-value="patchBoard({ expand: $event ? 'fill' : null })" />Page: fills the window when opened</Label>
       </section>
       <AlertDialog v-model:open="confirmDelete">

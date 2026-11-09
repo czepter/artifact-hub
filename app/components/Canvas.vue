@@ -59,7 +59,7 @@ const emit = defineEmits<{
   transferBoard: [path: string, mode: 'copy' | 'move']
 }>()
 
-interface BoardView { group?: string, path: string, x: number, y: number, w: number, h: number, title: string, interactive: boolean, expand: string, src: string, locked: boolean }
+interface BoardView { group?: string, path: string, x: number, y: number, w: number, h: number, title: string, interactive: boolean, expand: string, src: string, locked: boolean, autosize?: boolean }
 type Ov = { x: number, y: number, w: number, h: number, points: number[][] }
 
 const viewport = ref<HTMLElement>()
@@ -102,7 +102,7 @@ const boardBase = computed<BoardView[]>(() => {
     const rest = Object.keys(c.boards).filter(p => !order.includes(p))
     return [...order, ...rest].filter(p => c.boards[p] && revOf.value[p] !== undefined).map((p) => {
       const b = c.boards[p]
-      return { path: p, x: +b.x || 0, y: +b.y || 0, w: +b.w || 800, h: +b.h || 600, title: b.title || p, interactive: !!b.is_interactive, expand: b.expand || '', src: src(p), locked: !!b.locked, group: b.group }
+      return { path: p, x: +b.x || 0, y: +b.y || 0, w: +b.w || 800, h: +b.h || 600, title: b.title || p, interactive: !!b.is_interactive, expand: b.expand || '', src: src(p), locked: !!b.locked, group: b.group, autosize: !!b.autosize }
     })
   }
   return [{ path: 'index.html', x: 0, y: 0, w: size.w, h: size.h, title: '', interactive: true, expand: 'fill', src: src('index.html'), locked: false }]
@@ -475,7 +475,7 @@ function onPointerUp(e: PointerEvent) {
     justDragged = true; setTimeout(() => (justDragged = false), 0)
     if (done.clone) board_.cloneBy(done.clone) // Alt-drag: copies land where the drag ended
     else if (done.kind === 'endpoint') send(...done.ops)
-    else sendMove(done.ops)
+    else sendMove(done.ops.map(o => o.type === 'updateBoard' && (o.patch.w !== undefined || o.patch.h !== undefined) ? { ...o, patch: { ...o.patch, autosize: null } } : o)) // a manual resize ends auto-sizing
     nextTick(done.clear)
     return
   }
@@ -727,6 +727,17 @@ function navigateFrom(board: BoardView, href: string) {
   if (u.protocol === 'http:' || u.protocol === 'https:') window.open(u.href, '_blank', 'noopener,noreferrer')
 }
 
+/** Boards with autosize follow their page: the frame reports its content size and the board is resized to match (edit mode only, since it saves). */
+function fitToContent(b: BoardView, cw: unknown, ch: unknown) {
+  if (!props.editMode || !b.autosize || b.locked || focusBoard.value || boardOv[b.path]) return
+  const h = Math.round(Number(ch)), w = Math.round(Number(cw))
+  if (!(h >= 40) || !(w >= 40)) return
+  const patch: { w?: number, h?: number } = {}
+  if (Math.abs(h - b.h) > 2) patch.h = Math.min(h, 8000)
+  if (w > b.w + 2) patch.w = Math.min(w, 8000) // content wider than the board: widen; never shrink the width, the page reflows to it
+  if (Object.keys(patch).length) send({ type: 'updateBoard', path: b.path, patch: { ...patch, autosize: true } })
+}
+
 function onMessage(e: MessageEvent) {
   const d = e.data
   if (!d || typeof d.type !== 'string' || !d.type.startsWith('hub:')) return
@@ -764,6 +775,7 @@ function onMessage(e: MessageEvent) {
     if (props.editMode) { postTo(board.path, { type: 'hub:edit-mode', enabled: true }); postTo(board.path, { type: 'hub:edit-cmd', cmd: 'drag-mode', mode: props.dragMode ?? 'free' }) }
     locate(board.path)
   } else if (d.type === 'hub:layout') {
+    fitToContent(board, d.width, d.height)
     locate(board.path)
   } else if (d.type === 'hub:target' && props.commentMode) {
     emit('target', { board: board.path, anchor: d.anchor })
