@@ -54,6 +54,8 @@ const loops = computed(() => info.value?.directives.filter(d => d.kind === 'sc-f
 const holeAttrs = computed(() => info.value?.attrs.filter(a => a.hole) ?? [])
 const codeDriven = computed(() => repeated.value || !!info.value?.directives.length || !!info.value?.text?.hasHoles || holeAttrs.value.length > 0)
 const names = computed(() => [...(info.value?.scope.vars ?? []), ...(info.value?.scope.props ?? [])])
+/** The data-props names as holes, for the hint at the bottom. Built here because braces inside a template interpolation do not parse. */
+const propHoles = computed(() => (info.value?.scope.props ?? []).map(p => '{' + '{' + p + '}' + '}').join(', ') + (info.value?.scope.props.length ? ', ' : ''))
 const textDirty = computed(() => !!info.value?.text && draftText.value !== info.value.text.source)
 
 function send(...ops: Record<string, unknown>[]) { emit('apply', { board: props.board, ops: ops.map(o => ({ id: props.sel.id, ...o })) }) }
@@ -68,13 +70,14 @@ function addDirective() {
   send({ type: 'wrapDirective', kind, attrs: kind === 'sc-for' ? { list: addList.value.trim(), as: addAs.value.trim() } : { value: addValue.value.trim() } })
   adding.value = null
 }
+const hole = (n: string) => '{' + '{' + n + '}' + '}'
 function insertHole(name: string) {
   const el = (textEl.value && '$el' in textEl.value ? textEl.value.$el : textEl.value) as HTMLTextAreaElement | null
-  const hole = `{{${name}}}`
-  if (!el || typeof el.selectionStart !== 'number') { draftText.value += hole; return }
+  const text = hole(name)
+  if (!el || typeof el.selectionStart !== 'number') { draftText.value += text; return }
   const a = el.selectionStart, b = el.selectionEnd
-  draftText.value = draftText.value.slice(0, a) + hole + draftText.value.slice(b)
-  nextTick(() => { el.focus(); el.setSelectionRange(a + hole.length, a + hole.length) })
+  draftText.value = draftText.value.slice(0, a) + text + draftText.value.slice(b)
+  nextTick(() => { el.focus(); el.setSelectionRange(a + text.length, a + text.length) })
 }
 function applyText() { if (textDirty.value) send({ type: 'text', html: draftText.value }) }
 function setAttr(name: string, value: string | null) { send({ type: 'tattr', name, value }) }
@@ -140,7 +143,7 @@ const inp = 'h-7 font-mono text-xs'
       <Textarea ref="textEl" v-model="draftText" class="min-h-16 font-mono text-xs" spellcheck="false" :disabled="busy" aria-label="Template text" @keydown.ctrl.enter.prevent="applyText" @keydown.meta.enter.prevent="applyText" />
       <div v-if="names.length" class="flex flex-wrap items-center gap-1">
         <span class="text-[11px] text-muted-foreground">Insert</span>
-        <Button v-for="n in names" :key="n" variant="outline" size="xs" class="h-5 px-1.5 font-mono text-[11px]" :title="`Insert {{${n}}}`" @click="insertHole(n)">{{ n }}</Button>
+        <Button v-for="n in names" :key="n" variant="outline" size="xs" class="h-5 px-1.5 font-mono text-[11px]" :title="`Insert ${hole(n)}`" @click="insertHole(n)">{{ n }}</Button>
       </div>
       <div class="flex gap-1.5"><Button size="xs" :disabled="!textDirty || busy" @click="applyText">Apply text</Button><Button size="xs" variant="outline" :disabled="!textDirty" @click="draftText = info.text!.source">Revert</Button></div>
     </div>
@@ -161,7 +164,7 @@ const inp = 'h-7 font-mono text-xs'
     </div>
 
     <p v-if="info?.dc" class="m-0 text-xs text-muted-foreground">
-      What the holes resolve to ({{ info.scope.props.length ? info.scope.props.map(p => `{{${p}}}`).join(', ') + ', ' : '' }}<code>renderVals()</code>, state) is written in the board's script:
+      What the holes resolve to ({{ propHoles }}<code>renderVals()</code>, state) is written in the board's script:
       <Button variant="link" size="xs" class="h-auto p-0 text-xs" @click="emit('openCode')">open the file in the Code tab</Button>.
     </p>
   </section>
