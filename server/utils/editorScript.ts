@@ -1,7 +1,7 @@
 /**
  * In-frame visual editor (owner only; inert until the viewer sends hub:edit-mode). It edits the live DOM so the
  * result is instant and reports every change as a small operation (style, attr, text, insert, delete, duplicate,
- * move, moveTo). The viewer batches them; the server replays them against the stored source.
+ * move, moveTo, group, ungroup). The viewer batches them; the server replays them against the stored source.
  * Elements are addressed by data-hub-id (permanent) or data-hub-pid (provisional, from serving); nodes created by
  * page scripts have neither and cannot be edited.
  *
@@ -10,6 +10,7 @@
  * becomes the positioning context) without it jumping.
  */
 export const EDITOR = String.raw`<script data-hub-editor>(function(){
+  var multi = [], multiBoxes = [];
   var on = false, sel = null, editing = null, editOriginal = '', hoverEl = null, raf = 0, treeTimer = 0;
   var dragCand = null, dragging = false, dragPl = null, suppressClick = false, fm = null, resizing = null;
   // 'free': dragging moves an element anywhere and palette drops land exactly where released. 'flow': dragging reorders in the page flow.
@@ -18,6 +19,9 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
   var VOID = { area:1, base:1, br:1, col:1, embed:1, hr:1, img:1, input:1, link:1, meta:1, source:1, track:1, wbr:1 };
   var CONT = { div:1, section:1, main:1, article:1, aside:1, header:1, footer:1, nav:1, form:1, ul:1, ol:1, li:1, body:1, figure:1, fieldset:1, details:1, td:1, th:1 };
   var NOINS = { tr:1, tbody:1, thead:1, tfoot:1, colgroup:1, col:1, caption:1 };
+  var GROUPABLE = { div:1, section:1, article:1, aside:1, header:1, footer:1, main:1, nav:1, span:1, figure:1 };
+  var NOGROUP = { li:1, tr:1, td:1, th:1, option:1, dt:1, dd:1, thead:1, tbody:1, tfoot:1, caption:1, col:1, colgroup:1, html:1, body:1 };
+  var LISTPAR = { ul:1, ol:1, dl:1, table:1, thead:1, tbody:1, tfoot:1, tr:1, colgroup:1, select:1, optgroup:1 };
   var CURSORS = { nw:'nwse-resize', n:'ns-resize', ne:'nesw-resize', e:'ew-resize', se:'nwse-resize', s:'ns-resize', sw:'nesw-resize', w:'ew-resize' };
   function post(m){ try { window.parent.postMessage(m, '*'); } catch (_) {} }
   function q(s){ return String(s).replace(/["\\]/g, '\\$&'); }
@@ -33,6 +37,12 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
     var el = document.querySelector('[data-hub-id="' + q(id) + '"]');
     if (!el && /^p\d+$/.test(id)) el = document.querySelector('[data-hub-pid="' + id.slice(1) + '"]');
     return el;
+  }
+  // A node rendered from a loop exists once per row, all sharing one id: edits to the template show on every copy.
+  function allById(id){
+    if (!id) return [];
+    var sel0 = '[data-hub-id="' + q(id) + '"]' + (/^p\d+$/.test(id) ? ',[data-hub-pid="' + id.slice(1) + '"]' : '');
+    return [].slice.call(document.querySelectorAll(sel0)).filter(function(n){ return !isOverlay(n); });
   }
   function isOverlay(el){ return el && el.closest && el.closest('[data-hub-overlay]'); }
   function editableAt(el){
@@ -109,6 +119,10 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
       parentFlex: !!pcs && /flex/.test(pcs.display), parentRow: !!pcs && /flex/.test(pcs.display) && !/^column/.test(pcs.flexDirection),
       textEditable: !!id && !el.hasAttribute('data-hub-h') && !VOID[tag] && plain,
       bound: el.hasAttribute('data-hub-h'),
+      repeats: allById(id).length,
+      multi: multi.length,
+      canGroup: canGroup(),
+      groupable: !!GROUPABLE[tag] && !!el.children.length && el !== document.body,
       parentId: par ? idOf(par) : null,
       canUp: !!siblingWithId(el, -1), canDown: !!siblingWithId(el, 1),
       attrs: { src: el.getAttribute('src'), href: el.getAttribute('href'), alt: el.getAttribute('alt'), placeholder: el.getAttribute('placeholder'), title: el.getAttribute('title'), id: el.getAttribute('id'), cls: el.getAttribute('class'), ariaLabel: el.getAttribute('aria-label') },
@@ -149,6 +163,8 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
     raf = 0; if (!on) return; ensureBoxes();
     selBox.setAttribute('data-css', 'border:2px solid #3b82f6;border-radius:2px'); hoverBox.setAttribute('data-css', 'border:1px dashed #3b82f6;background:rgba(59,130,246,.06)');
     place(selBox, sel); place(hoverBox, hoverEl && hoverEl !== sel && !editing && !fm ? hoverEl : null);
+    while (multiBoxes.length < multi.length) { var mb = mk(''); mb.setAttribute('data-css', 'border:2px solid #3b82f6;border-radius:2px;opacity:.65'); multiBoxes.push(mb); }
+    multiBoxes.forEach(function(b, i){ if (i < multi.length) place(b, multi[i]); else b.style.display = 'none'; });
     var live = sel && document.contains(sel);
     if (live) {
       var r = sel.getBoundingClientRect();
@@ -167,7 +183,20 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
   }
   function schedule(){ if (!raf) raf = requestAnimationFrame(paint); }
   function report(){ post({ type: 'hub:edit-select', info: describe(sel) }); schedule(); }
-  function select(el){ sel = el || null; report(); }
+  function select(el, keep){ sel = el || null; if (!keep) multi = []; report(); }
+  function note(text){ post({ type: 'hub:edit-note', text: text }); }
+  function canGroup(){
+    if (!sel || sel === document.body) return false;
+    var par = sel.parentElement;
+    if (!par || LISTPAR[par.tagName.toLowerCase()]) return false;
+    return [sel].concat(multi).every(function(m){ return m.parentElement === par && !NOGROUP[m.tagName.toLowerCase()] && !!idOf(m); });
+  }
+  function toggleMulti(el){
+    if (!el || !sel || el === sel || el === document.body) return;
+    if (el.parentElement !== sel.parentElement) { note('Group needs elements with the same parent. Shift-click siblings of the selected element.'); return; }
+    var i = multi.indexOf(el); if (i >= 0) multi.splice(i, 1); else multi.push(el);
+    report();
+  }
   function emit(op){ post({ type: 'hub:edit-op', op: op }); }
 
   // ---- layer tree and tweaks ----
@@ -461,6 +490,7 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
     if (suppressClick) { ev.preventDefault(); ev.stopPropagation(); return; }
     if ((editing && editing.contains(ev.target)) || isOverlay(ev.target)) return;
     ev.preventDefault(); ev.stopPropagation();
+    if (ev.shiftKey && sel) { toggleMulti(editableAt(ev.target)); return; }
     select(editableAt(ev.target));
   }, true);
   document.addEventListener('dblclick', function(ev){
@@ -468,7 +498,7 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
     var el = editableAt(ev.target); if (!el) return;
     var d = describe(el);
     if (d.textEditable) { ev.preventDefault(); select(el); startEdit(el); }
-    else post({ type: 'hub:edit-note', text: d.bound ? 'This text comes from template data and cannot be retyped here.' : 'Select an inner element to edit its text.' });
+    else post({ type: 'hub:edit-note', text: d.bound ? 'This text comes from template data: edit it under Template in the panel.' : 'Select an inner element to edit its text.' });
   }, true);
   ['submit', 'auxclick', 'contextmenu'].forEach(function(t){ document.addEventListener(t, function(ev){ if (on && !editing) ev.preventDefault(); }, true); });
   document.addEventListener('keydown', function(ev){
@@ -484,6 +514,7 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
     if (!sel) return;
     if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); run({ cmd: 'delete', id: idOf(sel) }); }
     else if (mod && ev.key.toLowerCase() === 'd') { ev.preventDefault(); run({ cmd: 'duplicate', id: idOf(sel) }); }
+    else if (mod && ev.key.toLowerCase() === 'g') { ev.preventDefault(); run({ cmd: ev.shiftKey ? 'ungroup' : 'group', id: idOf(sel) }); }
     else if (ev.key === 'Escape') { select(null); }
     else if (/^Arrow/.test(ev.key) && isFree(sel)) {
       ev.preventDefault();
@@ -507,21 +538,66 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
     }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
   } catch (_) {}
 
+  // ---- group / ungroup ----
+  // Grouping wraps siblings (and whatever lies between them) in a new div. When every member is freely positioned the
+  // wrapper becomes a free box around them and the members move to its coordinate space, so nothing jumps.
+  function doGroup(){
+    if (!sel) return;
+    if (!canGroup()) { note('These elements cannot be grouped. Pick siblings with the same parent (not list or table items).'); return; }
+    var members = [sel].concat(multi).sort(function(a, b){ return a.compareDocumentPosition(b) & 4 ? -1 : 1; });
+    var par = sel.parentElement, first = members[0], last = members[members.length - 1], gid = newId();
+    var wrap = document.createElement('div'); wrap.setAttribute('data-hub-id', gid);
+    var allFree = members.every(isFree), style = '', childOps = [];
+    if (allFree) {
+      var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+      members.forEach(function(m){ var ml = leftOf(m), mt = topOf(m); l = Math.min(l, ml); t = Math.min(t, mt); r = Math.max(r, ml + m.offsetWidth); b = Math.max(b, mt + m.offsetHeight); });
+      l = rnd(l); t = rnd(t);
+      style = 'position: absolute; left: ' + l + 'px; top: ' + t + 'px; width: ' + rnd(r - l) + 'px; height: ' + rnd(b - t) + 'px';
+      wrap.style.cssText = style;
+      members.forEach(function(m){ childOps.push({ el: m, set: { left: rnd(leftOf(m) - l) + 'px', top: rnd(topOf(m) - t) + 'px' } }); });
+    }
+    var nodes = []; for (var n = first; n; n = n.nextSibling) { nodes.push(n); if (n === last) break; }
+    par.insertBefore(wrap, first);
+    nodes.forEach(function(nd){ wrap.appendChild(nd); });
+    var ids = members.map(idOf);
+    var op = { type: 'group', ids: ids, id: gid }; if (style) op.style = style;
+    emit(op);
+    childOps.forEach(function(c){ Object.keys(c.set).forEach(function(k){ c.el.style.setProperty(k, c.set[k]); }); emit({ type: 'style', id: idOf(c.el), set: c.set }); });
+    select(wrap);
+  }
+  function doUngroup(){
+    if (!sel || !GROUPABLE[sel.tagName.toLowerCase()] || sel === document.body || !sel.children.length) { note('Select a group (a wrapper element with content) to ungroup it.'); return; }
+    var wrapEl = sel, par = wrapEl.parentNode, kids = [].slice.call(wrapEl.children).filter(idOf);
+    var pos = getComputedStyle(wrapEl).position, shift = pos !== 'static' ? { x: wrapEl.offsetLeft + wrapEl.clientLeft, y: wrapEl.offsetTop + wrapEl.clientTop } : null;
+    if (shift) kids.forEach(function(k){
+      if (!isFree(k)) return;
+      var set = { left: rnd(leftOf(k) + shift.x) + 'px', top: rnd(topOf(k) + shift.y) + 'px' };
+      emit({ type: 'style', id: idOf(k), set: set });
+      k.setAttribute('data-hub-tmp', JSON.stringify(set));
+    });
+    while (wrapEl.firstChild) par.insertBefore(wrapEl.firstChild, wrapEl);
+    kids.forEach(function(k){ var tmp = k.getAttribute('data-hub-tmp'); if (tmp) { var set = JSON.parse(tmp); k.removeAttribute('data-hub-tmp'); Object.keys(set).forEach(function(p){ k.style.setProperty(p, set[p]); }); } });
+    wrapEl.remove();
+    emit({ type: 'ungroup', id: idOf(wrapEl) });
+    select(kids[0] || null);
+    multi = kids.slice(1); report();
+  }
+
   // ---- commands from the viewer ----
   function run(m){
     var el = byId(m.id);
     switch (m.cmd) {
-      case 'select': select(el); break;
+      case 'select': if (m.extend && sel && el) toggleMulti(el); else select(el); break;
       case 'deselect': select(null); break;
       case 'hover': hoverEl = el; schedule(); break;
       case 'tree': postTree(); break;
       case 'style':
         if (!el) return;
-        Object.keys(m.set || {}).forEach(function(k){ if (m.set[k] === null || m.set[k] === '') el.style.removeProperty(k); else el.style.setProperty(k, m.set[k]); });
+        allById(m.id).forEach(function(t){ Object.keys(m.set || {}).forEach(function(k){ if (m.set[k] === null || m.set[k] === '') t.style.removeProperty(k); else t.style.setProperty(k, m.set[k]); }); });
         emit({ type: 'style', id: m.id, set: m.set }); select(el); break;
       case 'attr':
         if (!el) return;
-        if (m.value === '' && (m.name === 'id' || m.name === 'class' || m.name === 'aria-label')) el.removeAttribute(m.name); else el.setAttribute(m.name, m.value);
+        allById(m.id).forEach(function(t){ if (m.value === '' && (m.name === 'id' || m.name === 'class' || m.name === 'aria-label')) t.removeAttribute(m.name); else t.setAttribute(m.name, m.value); });
         emit({ type: 'attr', id: m.id, name: m.name, value: m.value }); select(el); break;
       case 'position':
         if (!el) return;
@@ -535,6 +611,8 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
         }
         break;
       case 'insert': insertNode(m.html, m.op); break;
+      case 'group': doGroup(); break;
+      case 'ungroup': doUngroup(); break;
       case 'drag-mode': dragMode = m.mode === 'flow' ? 'flow' : 'free'; break;
       case 'drag-over': if (dragMode === 'free') { var c0 = containerAt(m.x, m.y); if (c0) showGhost(m.x, m.y, c0); else showDrop(null); } else showDrop(placementAt(m.x, m.y, null)); break;
       case 'drag-leave': showDrop(null); hoverEl = null; schedule(); break;

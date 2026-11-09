@@ -124,6 +124,11 @@ const fontOpen = ref(false)
         <Button variant="outline" size="xs" title="Duplicate (Ctrl+D)" @click="emit('cmd', { cmd: 'duplicate' })">Duplicate</Button>
         <Button variant="outline" size="xs" class="text-destructive" title="Delete (Del)" @click="emit('cmd', { cmd: 'delete' })">Delete</Button>
       </div>
+      <div class="flex flex-wrap items-center gap-1.5">
+        <Button variant="outline" size="xs" :disabled="!sel.canGroup" title="Wrap the selected elements in a group (Ctrl+G)" @click="emit('cmd', { cmd: 'group' })">Group{{ sel.multi ? ` (${sel.multi + 1})` : '' }}</Button>
+        <Button variant="outline" size="xs" :disabled="!sel.groupable" title="Replace this group by its content (Ctrl+Shift+G)" @click="emit('cmd', { cmd: 'ungroup' })">Ungroup</Button>
+        <span :class="hint">Shift-click siblings to group several.</span>
+      </div>
       <ToggleGroup type="single" variant="outline" :class="seg" aria-label="Position" :model-value="free ? 'free' : 'flow'">
         <ToggleGroupItem value="flow" :class="segItem" title="Part of the page flow" @click="emit('cmd', { cmd: 'position', mode: 'flow' })">Flow</ToggleGroupItem>
         <ToggleGroupItem value="free" :class="segItem" title="Place anywhere: drag it, resize with the handles, arrow keys nudge. Alt+drag pulls an element out of the flow." @click="emit('cmd', { cmd: 'position', mode: 'free' })">Free</ToggleGroupItem>
@@ -133,7 +138,7 @@ const fontOpen = ref(false)
       <div class="grid grid-cols-6 gap-1" role="group" aria-label="Align">
         <Button v-for="a in ALIGNS" :key="a[0]" variant="outline" size="icon-sm" class="w-full text-sm" :title="a[2]" :aria-label="a[2]" @click="emit('cmd', { cmd: 'align', to: a[0] })">{{ a[1] }}</Button>
       </div>
-      <p v-if="sel.bound" :class="hint">Its text comes from template data. Style it here; change the text in the source.</p>
+      <p v-if="sel.bound" :class="hint">Its text comes from template data. Style it here; change the text and data holes under Template.</p>
       <p v-else-if="sel.textEditable" :class="hint">Double-click to retype the text.</p>
     </section>
 

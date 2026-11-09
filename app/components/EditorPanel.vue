@@ -33,6 +33,9 @@ const props = defineProps<{
   dragMode: 'free' | 'flow'
   codeBusy: boolean
   codeError: string
+  templateBusy: boolean
+  templateError: string
+  flushEdits: () => Promise<void>
 }>()
 const emit = defineEmits<{
   cmd: [c: Record<string, unknown>]
@@ -51,6 +54,7 @@ const emit = defineEmits<{
   editContent: [path: string]
   play: [path: string]
   tweak: [values: Record<string, unknown>]
+  templateApply: [p: { board: string, ops: Record<string, unknown>[] }]
   codeApply: [p: { mode: 'element' | 'file', path: string, id: string | null, text: string }]
   exportBoard: [path: string]
   'update:tab': [tab: 'props' | 'code' | 'tweaks']
@@ -142,13 +146,18 @@ const layersOpen = ref(true)
             <CollapsibleContent>
               <div class="tree mt-2 max-h-56 overflow-auto rounded-lg border bg-background p-1">
                 <ul role="tree" aria-label="Layers" class="p-0">
-                  <LayerTree :node="tree" :depth="0" :selected-id="sel?.id ?? null" :open="open" @select="emit('cmd', { cmd: 'select', id: $event })" @hover="emit('hover', $event)" @toggle="toggle" />
+                  <LayerTree :node="tree" :depth="0" :selected-id="sel?.id ?? null" :open="open" @select="(i, x) => emit('cmd', { cmd: 'select', id: i, extend: !!x })" @hover="emit('hover', $event)" @toggle="toggle" />
                 </ul>
               </div>
             </CollapsibleContent>
           </Collapsible>
         </section>
 
+        <TemplatePanel
+          v-if="sel && (sel.board || activeBoard)"
+          :artifact-id="artifactId" :board="sel.board || activeBoard!" :sel="sel" :busy="templateBusy" :error="templateError" :flush-edits="flushEdits"
+          @apply="emit('templateApply', $event)" @open-code="emit('update:tab', 'code')"
+        />
         <ElementProps v-if="sel" :sel="sel" @cmd="emit('cmd', $event)" @export-board="activeBoard && emit('exportBoard', activeBoard)" />
         <p v-else class="hint empty">Click an element on the board to edit it, or pick one in Layers. Double-click text to retype it. Esc deselects.</p>
       </template>

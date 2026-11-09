@@ -41,8 +41,10 @@ ok('dc-runtime: exposes window.__dcSetProps for live updates', dcRuntimeSource.i
 
 console.log('\nAll DC runtime Phase 1 & 2 unit checks completed.');
 
+let JSDOM = null;
+try { ({ JSDOM } = await import('jsdom')); } catch { console.log('\nSKIP Test 3 (needs jsdom: npm i --no-save jsdom)'); }
+if (JSDOM) {
 console.log('\n=== Test 3: behaviour in jsdom (live tweaks, imports, worker prefetch) ===');
-const { JSDOM } = await import('jsdom');
 const dir = 'server/assets/dc/';
 const support = ['react.production.min.js', 'react-dom.production.min.js', 'dc-runtime.js'].map(f => readFileSync(dir + f, 'utf8')).join('\n;\n');
 const files = {
@@ -74,3 +76,4 @@ ok('worker: absent in jsdom, falls back to fetch', fetched.includes('ds/Btn.dc.h
 const frameSrc = readFileSync('server/utils/frame.ts', 'utf8');
 ok('bridge: data-nav posts hub:navigate', frameSrc.includes("closest('[data-nav]')"));
 ok('runtime: prefetch worker source present', dcRuntimeSource.includes('function workerMain') && dcRuntimeSource.includes('startPrefetch(names)'));
+}

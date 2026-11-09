@@ -56,4 +56,10 @@ export interface EditSel {
   parentId: string | null
   canUp: boolean
   canDown: boolean
+  /** How many elements are rendered from this one template node (a loop); 1 otherwise. */
+  repeats: number
+  /** Extra elements shift-selected together with this one. */
+  multi: number
+  canGroup: boolean
+  groupable: boolean
 }
