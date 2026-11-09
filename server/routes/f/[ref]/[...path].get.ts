@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
     let props: Record<string, unknown> | undefined
     const cj = readFile(artifactId, version, 'canvas.json')
     if (cj) { try { const t = JSON.parse(cj.content.toString('utf8'))?.boards?.[path]?.tweaks; if (t && typeof t === 'object') props = t } catch { /* ignore a broken canvas.json */ } }
-    return instrumentHtml(served, { props })
+    return instrumentHtml(served, { props, path, isDc: path.endsWith('.dc.html') || /<x-dc\b/i.test(source) })
   }
   return file.content
 })

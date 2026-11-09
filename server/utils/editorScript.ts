@@ -583,7 +583,10 @@ export const EDITOR = String.raw`<script data-hub-editor>(function(){
     if (d.type === 'hub:edit-mode') {
       on = !!d.enabled;
       if (!on) { if (editing) cancelEdit(); sel = null; hoverEl = null; resizing = null; ensureBoxes(); endDrag(); [selBox, hoverBox, tagLabel, dropBox, guideV, guideH].forEach(function(b){ b.style.display = 'none'; }); Object.keys(handles).forEach(function(k){ handles[k].style.display = 'none'; }); }
-      else { ensureBoxes(); schedule(); postTree(); postTweaks(); }
-    } else if (d.type === 'hub:edit-cmd' && on) run(d);
+    } else if (d.type === 'hub:edit-cmd') {
+      if (d.cmd === 'tweak-set') run(d);
+      else if (on) run(d);
+    }
   });
+  window.addEventListener('load', function(){ setTimeout(postTweaks, 80); });
 })();</script>`

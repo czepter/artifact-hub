@@ -768,7 +768,7 @@ function onMessage(e: MessageEvent) {
     emit('editNote', d.text)
   } else if (d.type === 'hub:edit-tree') {
     emit('editTree', board.path, d.tree)
-  } else if (d.type === 'hub:tweaks') {
+  } else if (d.type === 'hub:tweaks' || d.type === 'hub:tweaks-ready') {
     emit('editTweaks', board.path, { defs: d.defs ?? null, values: d.values ?? {} })
   } else if (d.type === 'hub:edit-export' && typeof d.html === 'string') {
     emit('editExport', d.html)
@@ -831,6 +831,11 @@ function boardAtPoint(cx: number, cy: number) {
     }
   }
   return null
+}
+
+/** Live tweak values to a Design Component board: it re-renders in place, no reload. */
+function tweaksUpdate(board: string, values: Record<string, unknown>) {
+  postTo(board, { type: 'hub:tweaks-update', values })
 }
 
 function editCmd(board: string, msg: Record<string, unknown>) {
@@ -915,7 +920,7 @@ function endpoint(n: NoteView, which: 'start' | 'end') {
 const creatingPen = computed(() => { const p = creating.value?.pts; if (!p) return ''; const st = Math.ceil(p.length / 250); return smoothPath(st > 1 ? p.filter((_, i) => i % st === 0 || i === p.length - 1) : p) })
 const inCanvasPage = computed(() => isCanvas.value && !focusBoard.value)
 
-defineExpose({ zoomToSelection, align, distribute, boardAtPoint, editCmd, reloadBoard, firstBoard, selectedBoardPath, navKeys, fit, centerOn, pins, broadcast, view, draftPos, enterFocus, exitFocus, step, startPresent, focusBoard, focusIndex, boardCount: computed(() => boards.value.length), selectBoard, selectNote, zoomAt })
+defineExpose({ tweaksUpdate, zoomToSelection, align, distribute, boardAtPoint, editCmd, reloadBoard, firstBoard, selectedBoardPath, navKeys, fit, centerOn, pins, broadcast, view, draftPos, enterFocus, exitFocus, step, startPresent, focusBoard, focusIndex, boardCount: computed(() => boards.value.length), selectBoard, selectNote, zoomAt })
 
 let ro: ResizeObserver | undefined
 onMounted(() => {
@@ -986,7 +991,7 @@ watch(isCanvas, () => nextTick(() => fit()))
           :title="b.title || 'Artifact'"
           sandbox="allow-scripts allow-popups allow-forms allow-downloads allow-modals"
           referrerpolicy="no-referrer"
-          :style="{ visibility: isCanvas && !frameLoaded[b.path] && !noThumb[b.path] ? 'hidden' : 'inherit', pointerEvents: !isCanvas || commentMode || elementLevel(b.path) || interacting === b.path || focusBoard === b.path ? 'auto' : 'none' }"
+          :style="{ visibility: isCanvas && !frameLoaded[b.path] && !noThumb[b.path] ? 'hidden' : 'inherit', pointerEvents: !panning && (!isCanvas || commentMode || elementLevel(b.path) || interacting === b.path || focusBoard === b.path) ? 'auto' : 'none' }"
           @load="frameLoaded[b.path] = true"
         />
         <div

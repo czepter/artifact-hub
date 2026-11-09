@@ -304,7 +304,7 @@ function onEditTweaks(board: string, t: { defs: Record<string, unknown> | null, 
 function onTweakChange(values: Record<string, unknown>) {
   const board = activeBoard.value
   if (!board) return
-  canvasRef.value?.editCmd(board, { cmd: 'tweak-set', props: values }) // live preview in the board
+  canvasRef.value?.tweaksUpdate(board, values) // live preview in the board, no reload
   tweaksByBoard[board] = { defs: tweaksByBoard[board]?.defs ?? null, values }
   onCanvasOp({ type: 'updateBoard', path: board, patch: { tweaks: Object.keys(values).length ? values : null } }, 'tweak:' + board)
 }
