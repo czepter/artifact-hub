@@ -1,7 +1,0 @@
-const home = `<!doctype html><html><head><style>body{font:16px system-ui;margin:0;background:#fafafa}header{padding:24px;background:#1c1b19;color:#fff}h1{margin:0}main{padding:24px;display:grid;gap:12px}button{padding:10px 16px;border-radius:8px;border:0;background:#c8553d;color:#fff;font-size:16px}#count{font-weight:700}</style></head><body><header><h1 id="hero">Welcome back</h1></header><main><p>You have <span id="count">0</span> clicks.</p><button id="go" onclick="document.getElementById('count').textContent=(window.n=(window.n||0)+1)">Click me</button><p>Static paragraph about pricing.</p></main></body></html>`
-const settings = `<div style="font:16px system-ui;padding:24px"><h2>Settings</h2><label>Name <input value="Ada"></label><ul><li>Profile</li><li>Billing</li><li>Team</li></ul></div>`
-const canvas = { v: 3, title: 'Sample UI', launch: { view: 'canvas' },
-  boards: { 'screens/Home.html': { x: 0, y: 0, w: 900, h: 560, title: 'Home', is_interactive: true }, 'screens/Settings.html': { x: 1020, y: 0, w: 600, h: 560, title: 'Settings' } },
-  order: ['screens/Home.html', 'screens/Settings.html'],
-  notes: { t1: { x: 0, y: -160, w: 800, text: 'Sample UI', kind: 'title1' }, n1: { x: 0, y: -80, w: 560, text: 'Double-click Home to interact. Use Comment to leave feedback.', size: 's' } } }
-console.log(JSON.stringify({ title: 'Sample UI', files: [{ path: 'canvas.json', content: JSON.stringify(canvas) }, { path: 'screens/Home.html', content: home }, { path: 'screens/Settings.html', content: settings }] }))

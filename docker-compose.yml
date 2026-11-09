@@ -1,0 +1,18 @@
+# Plain self-hosting. Set HUB_URL to the public address (https://hub.example.com) when you serve it behind a proxy.
+#   docker compose up -d
+services:
+  app:
+    image: ghcr.io/czepter/artifact-hub:${HUB_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NUXT_BASE_URL=${HUB_URL:-}
+      - NUXT_SESSION_SECRET=${NUXT_SESSION_SECRET:-}
+      - NUXT_GITHUB_CLIENT_ID=${NUXT_GITHUB_CLIENT_ID:-}
+      - NUXT_GITHUB_CLIENT_SECRET=${NUXT_GITHUB_CLIENT_SECRET:-}
+    volumes:
+      - hub-data:/data
+
+volumes:
+  hub-data:

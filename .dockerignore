@@ -7,3 +7,10 @@ node_modules
 .env.*
 !.env.example
 tests/e2e/*.png
+.claude
+.impeccable
+docs
+tests
+demo
+*.md
+site

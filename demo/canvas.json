@@ -1,0 +1,10 @@
+{
+ "v": 3,
+ "title": "Northwind: pricing, onboarding, dashboard",
+ "boards": {
+  "boards/pricing.html": { "x": 0, "y": 0, "w": 1120, "h": 700, "title": "Pricing page" },
+  "boards/onboarding.html": { "x": 1200, "y": 0, "w": 390, "h": 700, "title": "Onboarding (mobile)" },
+  "boards/dashboard.html": { "x": 1670, "y": 0, "w": 900, "h": 700, "title": "Dashboard" }
+ },
+ "order": ["boards/pricing.html", "boards/onboarding.html", "boards/dashboard.html"]
+}
