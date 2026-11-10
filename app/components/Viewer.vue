@@ -430,6 +430,12 @@ function onPageHide() {
 async function load() {
   try {
     const next = await $fetch<ViewData>(`/api/view/${props.refId}`, { query: pinnedVersion.value ? { v: pinnedVersion.value } : {} })
+    // Keep the current frame base while its token is still good, so a refresh never changes iframe URLs.
+    const cur = data.value
+    if (cur && cur.artifact.id === next.artifact.id && cur.artifact.version === next.artifact.version && cur.frameBase !== next.frameBase) {
+      const exp = Number(/^\/f\/ft_[^.]+\.(\d+)\./.exec(cur.frameBase)?.[1])
+      if (!(exp && exp < Date.now() / 1000 + 1800)) next.frameBase = cur.frameBase
+    }
     // Skip no-op updates so refreshing never rebuilds iframes.
     if (!data.value || JSON.stringify(next) !== JSON.stringify(data.value)) data.value = next
     error.value = null
@@ -451,7 +457,14 @@ onMounted(async () => {
   source.addEventListener('ready', () => { if (opened) load(); opened = true }) // resync after a reconnect
   const refresh = () => { if (!draft.value) load() }
   source.addEventListener('version', refresh)
-  source.addEventListener('comments', refresh)
+  // Comment events only refetch the comments, not the whole view (canvas, flow, versions).
+  source.addEventListener('comments', async () => {
+    if (draft.value) return
+    try {
+      const comments = await $fetch<ViewData['comments']>(`/api/view/${props.refId}/comments`)
+      if (data.value && JSON.stringify(comments) !== JSON.stringify(data.value.comments)) data.value = { ...data.value, comments }
+    } catch { refresh() }
+  })
   source.addEventListener('meta', refresh)
   source.addEventListener('data', (e) => {
     try {
