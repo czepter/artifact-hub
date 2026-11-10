@@ -5,6 +5,8 @@ import { listComments, listFiles, listVersions, readFile, requireArtifact } from
 
 export interface Board { x: number, y: number, w: number, h: number, title?: string, expand?: string, is_interactive?: boolean }
 
+const flowCache = new Map<string, FlowEdge[]>()
+
 export default defineEventHandler((event) => {
   const access = resolveAccess(event, getRouterParam(event, 'ref')!)
   const artifact = requireArtifact(access.artifactId)
@@ -18,15 +20,22 @@ export default defineEventHandler((event) => {
     try { canvas = JSON.parse(raw.content.toString('utf8')) } catch { canvas = null }
   }
 
-  // Links between boards (click-dummy flow), read from the boards' attributes.
-  const flow: FlowEdge[] = []
-  const boardPaths = canvas?.boards && typeof canvas.boards === 'object' ? Object.keys(canvas.boards as object) : []
-  if (boardPaths.length > 1) {
-    const set = new Set(boardPaths)
-    for (const path of boardPaths) {
-      const f = readFile(artifact.id, version, path)
-      if (f && f.content.length < 2_000_000) flow.push(...flowOf(path, f.content.toString('utf8'), set))
+  // Links between boards (click-dummy flow), read from the boards' attributes. Parsing every board is the
+  // expensive part of this endpoint, so memoize it on the files' revisions: it only changes with the files.
+  const flowKey = `${artifact.id}@${version}:${files.map(f => `${f.path}#${f.rev}`).join('|')}`
+  let flow = flowCache.get(flowKey)
+  if (!flow) {
+    flow = []
+    const boardPaths = canvas?.boards && typeof canvas.boards === 'object' ? Object.keys(canvas.boards as object) : []
+    if (boardPaths.length > 1) {
+      const set = new Set(boardPaths)
+      for (const path of boardPaths) {
+        const f = readFile(artifact.id, version, path)
+        if (f && f.content.length < 2_000_000) flow.push(...flowOf(path, f.content.toString('utf8'), set))
+      }
     }
+    flowCache.set(flowKey, flow)
+    if (flowCache.size > 50) flowCache.delete(flowCache.keys().next().value!)
   }
 
   // Frame URL base: share links reuse their own token, the owner gets a signed short-lived one.

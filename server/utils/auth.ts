@@ -42,7 +42,9 @@ export const requireOwner = (event: H3Event) => need(event, 'owner')
 // The viewer API hands out a short-lived signed token that goes into the iframe URL path instead.
 
 export function signFrameToken(artifactId: string, ttlSeconds = 12 * 3600): string {
-  const exp = Math.floor(Date.now() / 1000) + ttlSeconds
+  // Round the expiry up to the hour so repeated calls return the same token: a changing token changes the
+  // frame URLs, which makes the viewer reload every iframe (and lose scroll position) on each refresh.
+  const exp = Math.ceil((Math.floor(Date.now() / 1000) + ttlSeconds) / 3600) * 3600
   const body = `${artifactId}.${exp}`
   const sig = createHmac('sha256', secret()).update(body).digest('base64url')
   return `ft_${body}.${sig}`
